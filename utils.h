@@ -40,10 +40,10 @@ inline std::array<uint8_t, 20> generate_info_hash(std::string &file_path) {
     return info_hash;
 }
 
-inline std::array<uint8_t, 20> generate_peer_id() {
-    std::array<uint8_t, 20> peer_id;
+inline std::array<std::uint8_t, 20> generate_peer_id() {
+    std::array<std::uint8_t, 20> peer_id;
     for (int i = 0; i < 20; i++) {
-        peer_id[i] = static_cast<uint8_t>(rand() % 256);
+        peer_id[i] = static_cast<std::uint8_t>(rand() % 256);
     }
     return peer_id;
 }
@@ -77,12 +77,12 @@ inline std::string parse_announce_url(const std::string &url) {
     return host;
 }
 
-inline std::string url_encode(const std::vector<uint8_t>& data) {
+inline std::string url_encode(const std::vector<std::uint8_t>& data) {
     std::ostringstream escaped;
     escaped.fill('0');
     escaped << std::hex;
 
-    for (uint8_t c : data) {
+    for (auto c : data) {
         // 标准 URL 编码：所有非字母数字字符都编码，或者为了安全起见，编码所有字节
         // 对于二进制数据（如 hash），通常编码所有字节
         escaped << '%' << std::setw(2) << static_cast<int>(c);

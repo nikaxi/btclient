@@ -25,15 +25,15 @@ class Client{
 
     std::vector<std::string> get_peers(Torrent &torrent);
 
-    Client(std::array<uint8_t, 20> &peer_id_, std::array<uint8_t, 20> &info_hash_):
+    Client(std::array<std::uint8_t, 20> &peer_id_, std::array<std::uint8_t, 20> &info_hash_):
         peer_id(peer_id_), info_hash(info_hash_){}
 
     private:
     int socket;
     bool choked;
     std::vector<std::byte> bit_field;
-    std::array<uint8_t, 20> peer_id;
-    std::array<uint8_t, 20> info_hash;
+    std::array<std::uint8_t, 20> peer_id;
+    std::array<std::uint8_t, 20> info_hash;
     Peer *peer;
 };
 

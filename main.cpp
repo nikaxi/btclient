@@ -27,19 +27,7 @@ int main() {
         std::cout << "announce: " << torrent.announce << std::endl;
 
         Peer *peer = nullptr;
-        std::array<uint8_t, 20> peer_id = generate_peer_id();
-        std::array<uint8_t, 20> info_hash;
-
-        auto encoded_info = bencode::encode(bencode::dict{
-            {bencode::string("name"), bencode::data(torrent.info.name)},
-            {bencode::string("piece length"), bencode::data(static_cast<long long>(torrent.info.piece_length))},
-            {bencode::string("length"), bencode::data(static_cast<long long>(torrent.info.length))},
-            {bencode::string("pieces"), bencode::data(std::string(torrent.info.pieces.begin(), torrent.info.pieces.end()))}
-        });
-
-        SHA1(reinterpret_cast<const unsigned char*>(encoded_info.data()), encoded_info.size(), 
-                         reinterpret_cast<unsigned char*> (info_hash.data()));
-        torrent.info_hash = info_hash;
+        std::array<std::uint8_t, 20> peer_id = generate_peer_id();
 
         Client client(peer_id, torrent.info_hash);
 
@@ -48,11 +36,6 @@ int main() {
         for (auto &peer_str: peers) { 
             std::cout << "peer: " << peer_str << std::endl;
         }
-
-
-
-
-
     } catch (const std::exception &ex) {
         std::cerr << "error:" << ex.what() ;
         return 1;

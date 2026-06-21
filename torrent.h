@@ -18,6 +18,7 @@ struct Info {
 
 struct Torrent {
     Torrent(std::ifstream &f_stream);
+    void set_hash();
     std::string announce;
     Info info;
     std::array<uint8_t, 20> info_hash;

@@ -2,6 +2,7 @@
 #include "torrent.h"
 #include "bencode.hpp"
 #include <algorithm>
+#include <openssl/sha.h>
 
 using namespace bencode;
 
@@ -54,45 +55,44 @@ static std::pair<size_t, size_t> find_info_range(const std::vector<uint8_t>& dat
 }
 
 Torrent::Torrent(std::ifstream &f_stream) {
-    // 1. 读取整个文件到内存
-    f_stream.seekg(0, std::ios::end);
-    std::streamsize size = f_stream.tellg();
-    f_stream.seekg(0, std::ios::beg);
-    
-    std::vector<uint8_t> buffer(size);
-    if (!f_stream.read(reinterpret_cast<char*>(buffer.data()), size)) {
-        throw std::runtime_error("Failed to read torrent file");
-    }
-    
-    // 2. 计算 Info Hash (从原始字节)
-    try {
-        auto [start, end] = find_info_range(buffer);
-        SHA1(buffer.data() + start, end - start, info_hash.data());
-    } catch (const std::exception& e) {
-        std::cerr << "Warning: Failed to calculate info_hash: " << e.what() << std::endl;
-        // 你可以选择抛出异常或保留全0哈希
-        std::fill(info_hash.begin(), info_hash.end(), 0);
-    }
 
-    // 3. 从内存流中解码 Bencode
-    std::istringstream iss(std::string(buffer.begin(), buffer.end()));
-    auto data = bencode::decode(iss);
+    auto data = bencode::decode(f_stream);
     auto dict = std::get<bencode::dict>(data);
 
     announce = std::get<bencode::string>(dict["announce"]);
 
     auto info_dic = std::get<bencode::dict>(dict["info"]);
 
+    // setup Info
     info.piece_length = std::get<bencode::integer>(info_dic["piece length"]);
     info.length = std::get<bencode::integer>(info_dic["length"]);
     info.name = std::get<bencode::string>(info_dic["name"]);
-
     auto pieces_data = std::get<bencode::string>(info_dic["pieces"]);
-
     std::vector<std::byte> v(pieces_data.size());
     std::transform(pieces_data.begin(), pieces_data.end(), v.begin(), [](char c) {
             return static_cast<std::byte>(c);
     });
-    
     info.pieces = std::move(v);
+
+    std::cout << "name:" << info.name << std::endl;
+    std::cout << "length:" << info.length << std::endl;
+    std::cout << "piece_length:" << info.piece_length << std::endl;
+
+
+    // setup hash of Info 
+    set_hash();
+}
+
+void Torrent::set_hash() {
+    auto encoded_info = bencode::encode(bencode::dict{
+            {bencode::string("name"), bencode::data(info.name)},
+            {bencode::string("piece length"), bencode::data(static_cast<long long>(info.piece_length))},
+            {bencode::string("length"), bencode::data(static_cast<long long>(info.length))},
+            {bencode::string("pieces"), bencode::data(std::string(info.pieces.begin(), info.pieces.end()))}
+    });
+
+
+    
+    SHA1(reinterpret_cast<const unsigned char*>(encoded_info.data()), encoded_info.size(), 
+                         reinterpret_cast<unsigned char*> (this->info_hash.data()));
 }

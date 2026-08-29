@@ -18,28 +18,34 @@
 #include <format>
 #include <openssl/sha.h>
 #include <iomanip>
+#include "bencode.hpp"
+
+using namespace bencode;
 
 inline std::string encode_binary(std::array<std::uint8_t, 20> &data) {
    std::string result;
    
    for (auto &byte : data) {
-      result += std::format("%{:02X}", byte);
+      result += std::format("{:02x}", byte);
    }
    return result;
 }
 
 inline std::array<uint8_t, 20> generate_info_hash(std::string &file_path) { 
     std::ifstream file(file_path, std::ios::binary);
+
+    auto data = bencode::decode(file);
+    auto dict = std::get<bencode::dict>(data); 
+    // auto info_data = std::get<bencode::dict>(dict["info"]);
+    // info_data is a bencode::data object, we need to encode it back to binary form
+    const std::string info_data_bytes = bencode::encode(dict["info"]);
+    // info_data_bytes is a std::string, we can use its data() and size() to get the raw bytes for SHA1
     std::array<uint8_t, 20> info_hash;
-    file.seekg(0, std::ios::end);
-    int file_size = file.tellg();
-    file.seekg(0, std::ios::beg);
-    std::vector<uint8_t> file_data(file_size);
-    file.read((char*)file_data.data(), file_size);
-    SHA1(file_data.data(), file_size, info_hash.data());
+    SHA1(reinterpret_cast<const unsigned char*>(info_data_bytes.data()), info_data_bytes.size(), info_hash.data());
+    // 
+
     return info_hash;
 }
-
 inline std::array<std::uint8_t, 20> generate_peer_id() {
     std::array<std::uint8_t, 20> peer_id;
     for (int i = 0; i < 20; i++) {

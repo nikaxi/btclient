@@ -1,4 +1,7 @@
 #include <openssl/sha.h> // 需要链接 OpenSSL 库 (-lssl -lcrypto)
+#include <vector>
+#include <cstring>
+#include <iostream>
 
 // 假设你有一个 Piece 缓存类
 class PieceBuffer {

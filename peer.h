@@ -22,6 +22,22 @@ struct Peer  {
              (std::to_integer<int>(port[0]) << 8) | std::to_integer<int>(port[1]));
         return std::string(buffer);
     }
+
+    // ip 的字符串形式
+    std::string str_ip() {
+         char buf[16]; // IPv4最长15字符 + '\0'1
+    snprintf(buf, sizeof(buf), "%d.%d.%d.%d",
+             std::to_integer<int>(ip[0]),
+             std::to_integer<int>(ip[1]),
+             std::to_integer<int>(ip[2]),
+             std::to_integer<int>(ip[3])
+            );
+    return std::string(buf);
+    }
+
+    int port_() {
+        return (std::to_integer<int>(port[0]) << 8) | std::to_integer<int>(port[1]);
+    }
 };
 
 #endif

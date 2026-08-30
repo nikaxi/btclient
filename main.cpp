@@ -35,9 +35,14 @@ int main() {
 
 
         // Print the list of peers
-        std::cout << "List of peers:" << std::endl;
-        for (auto &peer_str : peers) {
-            std::cout << peer_str.to_string() << std::endl;
+
+        // connect() ➔ handshake() ➔ exchange_bitfield() ➔ send_interested() ➔ wait_for_unchoke() ➔ loop { send_request() & process_incoming() }。
+        for (auto &peer : peers) {
+            client.set_peer(&peer);
+            client.connect();
+            client.handshake();
+            client.send_interested();
+            client.process_incoming_message();
         }
         // 从pieces map 中获取每个piece的哈希值，发出请求，下载每个piece
         // for (const auto &[index, piece_hash] : torrent.info.pieces) {

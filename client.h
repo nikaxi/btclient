@@ -27,6 +27,8 @@ class Client{
 
     Client(std::array<std::uint8_t, 20> &peer_id_, std::array<std::uint8_t, 20> &info_hash_):
         peer_id(peer_id_), info_hash(info_hash_){}
+    
+    bool request_piece(int index, std::vector<std::uint8_t> &piece_hash);    
 
     private:
     int socket;

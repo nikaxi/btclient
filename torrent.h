@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include "bencode.hpp"
 
 struct Info {
     std::string name;
@@ -20,7 +21,7 @@ struct Info {
 
 struct Torrent {
     Torrent(std::ifstream &f_stream);
-    void set_hash();
+    void set_hash(bencode::dict &info_dict);
     std::string announce;
     Info info;
     std::array<uint8_t, 20> info_hash;

@@ -38,14 +38,12 @@ int main() {
         for (const auto &peer_str : peers) {
             std::cout << peer_str << std::endl;
         }
-
-        std::cout << "pieces found:" << torrent.info.pieces.size() << std::endl;
-
-        for(const auto piece: torrent.info.pieces) {
-            std::cout << "piece: " << piece.first << std::endl;
+        // 从pieces map 中获取每个piece的哈希值，发出请求，下载每个piece
+        for (const auto &[index, piece_hash] : torrent.info.pieces) {
+            std::cout << "Requesting piece index: " << index << std::endl;
+            // 这里可以调用Client的请求方法，传入index和piece_hash
+            // client.request_piece(index, piece_hash);
         }
-
-
 
     } catch (const std::exception &ex) {
         std::cerr << "error:" << ex.what() ;

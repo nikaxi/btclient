@@ -41,7 +41,6 @@ std::vector<std::string> Client::get_peers(Torrent &torrent) {
     + "&port=" + std::to_string(PORT) 
     + "&uploaded=0&downloaded=0&left=" 
     + std::to_string(torrent.info.length);
-    http://bttracker.debian.org:6969/announce?compact=1&info_hash=%1D%6C%78%65%64%7A%68%79%EB%00%70%E4%5B%38%E1%01%A9%25%B3%A4&peer_id=%67%C6%69%73%51%FF%4A%EC%29%CD%BA%AB%F2%FB%E3%46%7C%C2%54%F8&port=6882&uploaded=0&downloaded=0&left=702545920
 
     std::cout << "URL: " << url << std::endl;
 
@@ -73,9 +72,19 @@ std::vector<std::string> Client::get_peers(Torrent &torrent) {
 
 }
 
+bool Client::request_piece(int index, std::vector<std::uint8_t> &piece_hash) {
+    // 这里可以实现请求 piece 的逻辑
+    // 例如，建立与 peer 的连接，发送请求消息，接收数据等
+    // 目前只是一个占位符，返回 true 表示请求成功
+    std::cout << "Requesting piece index: " << index << std::endl;
+    return true;
+}
+
 vec_u8 Client::recv_bitfield() {
     return bit_field;
 }
+
+
 
 
 

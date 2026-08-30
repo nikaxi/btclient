@@ -64,8 +64,10 @@ Torrent::Torrent(std::ifstream &f_stream) {
 
     auto info_dic = std::get<bencode::dict>(dict["info"]);
 
+
     // setup Info
     info.piece_length = std::get<bencode::integer>(info_dic["piece length"]);
+    // 多文件没有length字段，只有files字段
     info.length = std::get<bencode::integer>(info_dic["length"]);
     info.name = std::get<bencode::string>(info_dic["name"]);
     auto pieces_data = std::get<bencode::string>(info_dic["pieces"]);
@@ -74,11 +76,17 @@ Torrent::Torrent(std::ifstream &f_stream) {
             return static_cast<std::uint8_t>(c);
     });   
 
-    SHA1(reinterpret_cast<const unsigned char*>(v.data()), v.size(), info_hash.data());
     info.pieces = std::move(split_pieces(v));
 
     std::cout << "name:" << info.name << std::endl;
     std::cout << "length:" << info.length << std::endl;
     std::cout << "piece_length:" << info.piece_length << std::endl;
 
+    set_hash(info_dic);
+}
+
+void Torrent::set_hash(bencode::dict &info_dict) {
+    auto encoded_info = bencode::encode(info_dict);
+    SHA1(reinterpret_cast<const unsigned char*>(encoded_info.data()), encoded_info.size(), 
+                         reinterpret_cast<unsigned char*> (this->info_hash.data()));
 }

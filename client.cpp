@@ -39,11 +39,12 @@ std::vector<std::string> Client::get_peers(Torrent &torrent) {
     std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(info_hash.begin(),info_hash.end()))
     + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) 
     + "&port=" + std::to_string(PORT) 
-    + "&uploaded=0&downloaded=0&left=" 
+    + "&uploaded=0&event=started&downloaded=0&left=" 
     + std::to_string(torrent.info.length);
 
     std::cout << "URL: " << url << std::endl;
 
+    cli.set_follow_location(true); // follow redirects
     httplib::Result res = cli.Get(url);
 
     std::cout << "Status code: " << res->status << std::endl;
@@ -77,6 +78,8 @@ bool Client::request_piece(int index, std::vector<std::uint8_t> &piece_hash) {
     // 例如，建立与 peer 的连接，发送请求消息，接收数据等
     // 目前只是一个占位符，返回 true 表示请求成功
     std::cout << "Requesting piece index: " << index << std::endl;
+    // 构造请求
+    
     return true;
 }
 

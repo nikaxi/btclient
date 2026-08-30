@@ -68,7 +68,26 @@ Torrent::Torrent(std::ifstream &f_stream) {
     // setup Info
     info.piece_length = std::get<bencode::integer>(info_dic["piece length"]);
     // 多文件没有length字段，只有files字段
-    info.length = std::get<bencode::integer>(info_dic["length"]);
+    if (info_dic.find("length") != info_dic.end()) {
+        info.length = std::get<bencode::integer>(info_dic["length"]);
+    } else if (info_dic.find("files") != info_dic.end()) {
+        // 多文件模式，计算总长度
+        auto files_list = std::get<bencode::list>(info_dic["files"]);
+        long total_length = 0;
+        for (const auto &file_entry : files_list) {
+            auto file_dict = std::get<bencode::dict>(file_entry);
+            total_length += std::get<bencode::integer>(file_dict["length"]);
+            // 处理文件路径信息
+            auto file_name = std::get<bencode::list>(file_dict["path"]);
+            std::string full_path;
+            for (const auto &path_part : file_name) {
+                full_path += std::get<bencode::string>(path_part) + "/";
+            }
+        }
+        info.length = total_length;
+    } else {
+        throw std::runtime_error("Neither 'length' nor 'files' found in info dictionary");
+    }
     info.name = std::get<bencode::string>(info_dic["name"]);
     auto pieces_data = std::get<bencode::string>(info_dic["pieces"]);
     std::vector<std::uint8_t> v(pieces_data.size());

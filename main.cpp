@@ -18,7 +18,7 @@ extern const int PORT;
 // "d8:announce18:http://tracker.com10:created by14:KTorrent 2.1.413:creation datei1182163277ee"
 // /home/nikaxi/cpp-bencoding-master/sample/inputs/sample1.torrent
 int main() {
-    std::string torrent_file_path = "/home/nikaxi/debian-12.11.0-amd64-netinst.iso.torrent";
+    std::string torrent_file_path = "/home/nikaxi/files.torrent";
     try {
         // read from file
         std::ifstream f(torrent_file_path, std::ios::binary);
@@ -39,11 +39,10 @@ int main() {
             std::cout << peer_str << std::endl;
         }
         // 从pieces map 中获取每个piece的哈希值，发出请求，下载每个piece
-        for (const auto &[index, piece_hash] : torrent.info.pieces) {
-            std::cout << "Requesting piece index: " << index << std::endl;
-            // 这里可以调用Client的请求方法，传入index和piece_hash
-            // client.request_piece(index, piece_hash);
-        }
+        // for (const auto &[index, piece_hash] : torrent.info.pieces) {
+        //     // 这里可以调用Client的请求方法，传入index和piece_hash
+        //     // client.request_piece(index, piece_hash);
+        // }
 
     } catch (const std::exception &ex) {
         std::cerr << "error:" << ex.what() ;

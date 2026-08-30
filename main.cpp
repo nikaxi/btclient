@@ -33,9 +33,20 @@ int main() {
 
         std::vector<string> peers = client.get_peers(torrent);
 
-        for (auto &peer_str: peers) { 
-            std::cout << "peer: " << peer_str << std::endl;
+        // Print the list of peers
+        std::cout << "List of peers:" << std::endl;
+        for (const auto &peer_str : peers) {
+            std::cout << peer_str << std::endl;
         }
+
+        std::cout << "pieces found:" << torrent.info.pieces.size() << std::endl;
+
+        for(const auto piece: torrent.info.pieces) {
+            std::cout << "piece: " << piece.first << std::endl;
+        }
+
+
+
     } catch (const std::exception &ex) {
         std::cerr << "error:" << ex.what() ;
         return 1;

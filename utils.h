@@ -38,12 +38,15 @@ inline std::array<uint8_t, 20> generate_info_hash(std::string &file_path) {
     auto dict = std::get<bencode::dict>(data); 
     // auto info_data = std::get<bencode::dict>(dict["info"]);
     // info_data is a bencode::data object, we need to encode it back to binary form
-    const std::string info_data_bytes = bencode::encode(dict["info"]);
+    // const std::string info_data_bytes = bencode::encode(dict["info"]);
     // info_data_bytes is a std::string, we can use its data() and size() to get the raw bytes for SHA1
-    std::array<uint8_t, 20> info_hash;
-    SHA1(reinterpret_cast<const unsigned char*>(info_data_bytes.data()), info_data_bytes.size(), info_hash.data());
+    // std::array<uint8_t, 20> info_hash;
+    // SHA1(reinterpret_cast<const unsigned char*>(info_data_bytes.data()), info_data_bytes.size(), info_hash.data());
     // 
 
+    const std::string info_str = bencode::encode(dict["info"]);
+    std::array<uint8_t, 20> info_hash;
+    SHA1(reinterpret_cast<const unsigned char*>(info_str.data()), info_str.size(), info_hash.data());
     return info_hash;
 }
 inline std::array<std::uint8_t, 20> generate_peer_id() {
@@ -65,7 +68,7 @@ inline std::string parse_announce_url(const std::string &url) {
         // 如果没有协议，假设从开头开始
         proto_pos = 0;
     } else {
-        // 包含协议部分 (http://)
+        // 包含协议部分 (.*://)
         proto_pos += 3; 
     }
 
@@ -74,28 +77,50 @@ inline std::string parse_announce_url(const std::string &url) {
 
     if (path_pos != std::string::npos) {
         // 提取 Host: 从开头到第一个 '/' 之前
-        host = url.substr(0, path_pos);
+        host = url.substr(proto_pos, path_pos - proto_pos);
     } else {
         // 没有路径，整个剩余部分都是 Host
-        host = url;
+        host = url.substr(proto_pos);
     }
 
     return host;
 }
 
+// inline std::string url_encode(const std::vector<std::uint8_t>& data) {
+//     // 预分配内存，避免 std::string 动态扩容
+//     std::string result;
+//     result.reserve(data.size() * 3); 
+    
+//     // 十六进制字符查找表（大写，符合 BT 规范）
+//     static const char hex_chars[] = "0123456789ABCDEF";
+
+//     for (auto byte : data) {
+//         result.push_back('%');
+//         result.push_back(hex_chars[(byte >> 4) & 0x0F]); // 取高 4 位
+//         result.push_back(hex_chars[byte & 0x0F]);        // 取低 4 位
+//     }
+//     return result;
+// }
+
 inline std::string url_encode(const std::vector<std::uint8_t>& data) {
     std::ostringstream escaped;
     escaped.fill('0');
     escaped << std::hex;
-
     for (auto c : data) {
-        // 标准 URL 编码：所有非字母数字字符都编码，或者为了安全起见，编码所有字节
-        // 对于二进制数据（如 hash），通常编码所有字节
         escaped << '%' << std::setw(2) << static_cast<int>(c);
     }
-
     return escaped.str();
 }
 
+// 将 pieces 字节序列拆分为每个 piece 的哈希值，并存储在 map 中
+inline std::map<std::uint32_t, std::vector<std::uint8_t>> split_pieces(const std::vector<std::uint8_t> &pieces) {
+    std::map<std::uint32_t, std::vector<std::uint8_t>> pieces_map;
+    size_t num_pieces = pieces.size() / 20; // 每个 piece 的哈希值为 20 字节
+    for (size_t i = 0; i < num_pieces; ++i) {
+        std::vector<std::uint8_t> piece_hash(pieces.begin() + i * 20, pieces.begin() + (i + 1) * 20);
+        pieces_map[static_cast<std::uint32_t>(i)] = piece_hash;
+    }
+    return pieces_map;
+}
 
 #endif

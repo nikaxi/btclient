@@ -6,6 +6,7 @@
 #include <fstream>
 #include "torrent.h"
 #include "bencode.hpp"
+#include "utils.h"
 using namespace bencode;
 
 void Client::set_bit(int idx) {
@@ -28,7 +29,7 @@ std::vector<std::string> Client::get_peers(Torrent &torrent) {
     std::vector<std::string> peers_vec;
     // send request to announce_url
     std::string host = parse_announce_url(torrent.announce);
-    httplib::Client cli("http://bttracker.debian.org:6969");
+    httplib::Client cli(host);
 
     for(auto &byte: info_hash){
         std::cout << static_cast<int>(byte) << " ";
@@ -40,6 +41,7 @@ std::vector<std::string> Client::get_peers(Torrent &torrent) {
     + "&port=" + std::to_string(PORT) 
     + "&uploaded=0&downloaded=0&left=" 
     + std::to_string(torrent.info.length);
+    http://bttracker.debian.org:6969/announce?compact=1&info_hash=%1D%6C%78%65%64%7A%68%79%EB%00%70%E4%5B%38%E1%01%A9%25%B3%A4&peer_id=%67%C6%69%73%51%FF%4A%EC%29%CD%BA%AB%F2%FB%E3%46%7C%C2%54%F8&port=6882&uploaded=0&downloaded=0&left=702545920
 
     std::cout << "URL: " << url << std::endl;
 

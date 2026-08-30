@@ -8,12 +8,14 @@
 #include <fstream>
 #include <openssl/sha.h>
 #include <array>
+#include <cstdint>
+#include <map>
 
 struct Info {
     std::string name;
     long piece_length;
     long length;
-    std::vector<std::byte> pieces;
+    std::map<std::uint32_t, std::vector<std::uint8_t>> pieces;
 };
 
 struct Torrent {

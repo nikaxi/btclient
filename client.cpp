@@ -9,38 +9,51 @@
 #include "utils.h"
 using namespace bencode;
 
-void Client::set_bit(int idx) {
-    auto byte_idx = idx / 8;
-    auto bit_idx = idx % 8;
-    bit_field[byte_idx] |= static_cast<std::byte>(1 <<(7 -  bit_idx));
+bool Client::connect()
+{
+    socket_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (socket_fd == -1)
+        return false;
+
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
+
+    return ::connect(socket_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) == 0;
 }
 
-bool Client::is_bit_set(int idx) {
+void Client::set_bit(int idx)
+{
     auto byte_idx = idx / 8;
     auto bit_idx = idx % 8;
-    if (byte_idx >= bit_field.size()) {
+    bit_field[byte_idx] |= static_cast<std::byte>(1 << (7 - bit_idx));
+}
+
+bool Client::is_bit_set(int idx)
+{
+    auto byte_idx = idx / 8;
+    auto bit_idx = idx % 8;
+    if (byte_idx >= bit_field.size())
+    {
         return false;
     }
-    return static_cast<int>(bit_field[byte_idx] & static_cast<std::byte>(1 <<(7 -  bit_idx))) != 0;
+    return static_cast<int>(bit_field[byte_idx] & static_cast<std::byte>(1 << (7 - bit_idx))) != 0;
 }
 
-
-std::vector<std::string> Client::get_peers(Torrent &torrent) {
-    std::vector<std::string> peers_vec;
+std::vector<Peer> Client::get_peers(Torrent &torrent)
+{
+    std::vector<Peer> peers_vec;
     // send request to announce_url
     std::string host = parse_announce_url(torrent.announce);
     httplib::Client cli(host);
 
-    for(auto &byte: info_hash){
+    for (auto &byte : info_hash)
+    {
         std::cout << static_cast<int>(byte) << " ";
     }
 
-
-    std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(info_hash.begin(),info_hash.end()))
-    + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) 
-    + "&port=" + std::to_string(PORT) 
-    + "&uploaded=0&event=started&downloaded=0&left=" 
-    + std::to_string(torrent.info.length);
+    std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(info_hash.begin(), info_hash.end())) + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) + "&port=" + std::to_string(PORT) + "&uploaded=0&event=started&downloaded=0&left=" + std::to_string(torrent.info.length);
 
     std::cout << "URL: " << url << std::endl;
 
@@ -50,45 +63,69 @@ std::vector<std::string> Client::get_peers(Torrent &torrent) {
     std::cout << "Status code: " << res->status << std::endl;
     std::cout << "Body size: " << res->body.size() << std::endl;
 
-    if (res && res->status == 200) {
+    if (res && res->status == 200)
+    {
         auto decoded = bencode::decode(res->body);
         auto peers = std::get<bencode::string>(decoded["peers"]);
-        for (auto i = 0; i < peers.size(); i += 6) {
+        for (auto i = 0; i < peers.size(); i += 6)
+        {
             std::array<std::byte, 4> ip;
             std::array<std::byte, 2> port;
-            for (auto j = 0; j < 4; j++) {
+            for (auto j = 0; j < 4; j++)
+            {
                 ip[j] = static_cast<std::byte>(peers[i + j]);
             }
-            for (auto j = 0; j < 2; j++) {
+            for (auto j = 0; j < 2; j++)
+            {
                 port[j] = static_cast<std::byte>(peers[i + j + 4]);
             }
-            // convert to string 
-            peers_vec.push_back(Peer(ip, port).to_string());
+            // convert to string
+            peers_vec.push_back(Peer(ip, port));
         }
-    } else {
+    }
+    else
+    {
         std::cout << "Error: " << res.error() << std::endl;
     }
 
     return peers_vec;
-
 }
 
-bool Client::request_piece(int index, std::vector<std::uint8_t> &piece_hash) {
+bool Client::request_piece(int index, std::vector<std::uint8_t> &piece_hash)
+{
     // 这里可以实现请求 piece 的逻辑
     // 例如，建立与 peer 的连接，发送请求消息，接收数据等
     // 目前只是一个占位符，返回 true 表示请求成功
     std::cout << "Requesting piece index: " << index << std::endl;
     // 构造请求
-    
+
     return true;
 }
 
-vec_u8 Client::recv_bitfield() {
-    return bit_field;
+void Client::connect()
+{
+    // 这里可以实现与 peer 的连接逻辑
+    // 例如，使用 socket 连接到 peer 的 IP 和端口
+    // 目前只是一个占位符，表示连接成功
+    std::cout << "Connecting to peer..." << peer->to_string() << std::endl;
+
+    socket = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (socket < 0)
+    {
+        throw std::runtime_error("Failed to create socket");
+    }
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((std::to_integer<int>(peer->port[0]) << 8) | std::to_integer<int>(peer->port[1]));
+    addr.sin_addr.s_addr = *(uint32_t *)peer->ip.data();
+
+    if (::connect(socket, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    {
+        throw std::runtime_error("Failed to connect to peer");
+    }
 }
 
-
-
-
-
-
+vec_u8 Client::recv_bitfield()
+{
+    return bit_field;
+}

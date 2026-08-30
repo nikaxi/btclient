@@ -31,18 +31,20 @@ int main() {
 
         Client client(peer_id, torrent.info_hash);
 
-        std::vector<string> peers = client.get_peers(torrent);
+        std::vector<Peer> peers = client.get_peers(torrent);
+
 
         // Print the list of peers
         std::cout << "List of peers:" << std::endl;
-        for (const auto &peer_str : peers) {
-            std::cout << peer_str << std::endl;
+        for (auto &peer_str : peers) {
+            std::cout << peer_str.to_string() << std::endl;
         }
         // 从pieces map 中获取每个piece的哈希值，发出请求，下载每个piece
         // for (const auto &[index, piece_hash] : torrent.info.pieces) {
         //     // 这里可以调用Client的请求方法，传入index和piece_hash
         //     // client.request_piece(index, piece_hash);
         // }
+        
 
     } catch (const std::exception &ex) {
         std::cerr << "error:" << ex.what() ;

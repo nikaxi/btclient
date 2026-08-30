@@ -12,7 +12,7 @@ struct Peer  {
     Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_):
         ip(ip_), port(port_) 
         {}
-    std::string to_string() {
+    std::string to_string() const {
         char buffer[64];
         snprintf(buffer, sizeof(buffer), "%d.%d.%d.%d:%d",
              std::to_integer<int>(ip[0]),

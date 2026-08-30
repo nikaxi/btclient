@@ -83,6 +83,7 @@ Torrent::Torrent(std::ifstream &f_stream) {
             for (const auto &path_part : file_name) {
                 full_path += std::get<bencode::string>(path_part) + "/";
             }
+            std::cout << "File: " << full_path << ", Length: " << std::get<bencode::integer>(file_dict["length"]) << std::endl;
         }
         info.length = total_length;
     } else {

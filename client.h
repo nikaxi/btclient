@@ -54,10 +54,8 @@ class Client{
     bool send_raw(const uint8_t* data, size_t len) {
         size_t sent = 0;
 
-        std::cout << "send socket_fd:" << socket_fd;
         while (sent < len) {
             ssize_t res = ::send(socket_fd, data+sent, len - sent, 0);
-            std::cout << "send res:" << res;
             // 发送失败或对端断开
             if (res <= 0) return false;
             sent += res;

@@ -131,7 +131,6 @@ bool Client::handshake()
         return false;
     }
 
-    std::cout << "接收握手消息包\n";
 
     // 接收对方的握手包
     uint8_t recv_buf[68] = {0};
@@ -139,6 +138,7 @@ bool Client::handshake()
     if (n != 68 || recv_buf[0] != 19) {
         return false;
     }
+    std::cout << "完成接收握手消息包\n";
     // 校验对方返回的 Info Hash 是否一致
     return std::memcmp(&recv_buf[28], info_hash.data(), 20) == 0;
 }
@@ -246,7 +246,6 @@ void Client::recv_bitfield(const std::vector<std::uint8_t> &payload)
     bit_field.clear();
     bit_field.insert(bit_field.end(), payload.begin(), payload.end());
 
-    std::cout << "[Peer] 收到 Bitfield，长度: " << payload.size() << " 字节" << std::endl;
     std::cout << "[Peer] Bitfield 内容: ";
     for (const auto &byte : bit_field)
     {

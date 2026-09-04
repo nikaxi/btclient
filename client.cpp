@@ -39,18 +39,17 @@ bool Client::process_incoming_message()
     // 5. 根据 ID 分发处理
     switch (msg_id)
     {
-    case 1: // Choke
+    case 0:
         std::cout << "[Peer] 收到 Choke (被阻塞)" << std::endl;
         break;
-    case 2: // Unchoke
+    case 1: // Unchoke
         std::cout << "[Peer] 收到 Unchoke (解除阻塞)，可以请求数据了！" << std::endl;
-        send_request(0, 0, 16384); // 示例：请求第 0 个 Piece 的前 16KB 数据
-        // TODO: 触发发送 Request 逻辑
+        for (int i = 0; i < bit_field.size() * 8; ++i) {
+            send_request(i, 0, 16384); // 请求前 5 个 Piece 的前 16KB 数据
+        }
         break;
-    case 5: // Bitfield
-        std::cout << "[Peer] 收到 Bitfield，长度: " << payload_len << " 字节" << std::endl;
-        recv_bitfield(payload);
-        send_interested();
+    case 2: // Unchoke
+        std::cout << "[Peer] 收到 Interested (对方感兴趣)" << std::endl;
         break;
     case 7: // Piece (实际数据)
         handle_piece_message(payload);
@@ -64,7 +63,6 @@ bool Client::process_incoming_message()
 
 bool Client::connect()
 {
-    std::cout << "::connect()\n";
     socket_fd = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (socket_fd == -1)
         return false;
@@ -76,7 +74,7 @@ bool Client::connect()
     addr.sin_port = htons(port);
     inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
 
-    std::cout << "ip:" << ip << " port:" << port << "\n";
+    std::cout << "🔗到 ip:" << ip << " port:" << port << "\n";
 
     return ::connect(socket_fd, reinterpret_cast<struct sockaddr *>(&addr), sizeof(addr)) == 0;
 }
@@ -95,22 +93,32 @@ bool Client::read_exact(uint8_t *buffer, size_t len)
     return true;
 }
 
+void Client::set_piece(int idx)
+{
+    set_bit(idx);
+    std::cout << "已下载 Piece 索引: " << idx << std::endl;
+}
+
 void Client::set_bit(int idx)
 {
     auto byte_idx = idx / 8;
     auto bit_idx = idx % 8;
-    bit_field[byte_idx] |= static_cast<std::uint8_t>(1 << (7 - bit_idx));
+    if (byte_idx >= local_bit_field.size())
+    {
+        local_bit_field.resize(byte_idx + 1, 0);
+    }
+    local_bit_field[byte_idx] |= static_cast<std::uint8_t>(1 << (7 - bit_idx));
 }
 
 bool Client::is_bit_set(int idx)
 {
     auto byte_idx = idx / 8;
     auto bit_idx = idx % 8;
-    if (byte_idx >= bit_field.size())
+    if (byte_idx >= local_bit_field.size())
     {
         return false;
     }
-    return static_cast<int>(bit_field[byte_idx] & static_cast<int>(1 << (7 - bit_idx))) != 0;
+    return static_cast<int>(local_bit_field[byte_idx] & static_cast<int>(1 << (7 - bit_idx))) != 0;
 }
 
 bool Client::handshake()
@@ -126,16 +134,17 @@ bool Client::handshake()
     std::memcpy(&handshake_msg[48], peer_id.data(), 20);
 
     auto res = send_raw(handshake_msg, 68);
-    if (!res) {
+    if (!res)
+    {
         std::cout << "发送握手消息失败:" << res << "\n";
         return false;
     }
 
-
     // 接收对方的握手包
     uint8_t recv_buf[68] = {0};
     ssize_t n = ::recv(socket_fd, reinterpret_cast<char *>(recv_buf), 68, 0);
-    if (n != 68 || recv_buf[0] != 19) {
+    if (n != 68 || recv_buf[0] != 19)
+    {
         return false;
     }
     std::cout << "完成接收握手消息包\n";
@@ -162,8 +171,6 @@ std::vector<Peer> Client::get_peers(Torrent &torrent)
     cli.set_follow_location(true); // follow redirects
     httplib::Result res = cli.Get(url);
 
-    std::cout << "Status code: " << res->status << std::endl;
-    std::cout << "Body size: " << res->body.size() << std::endl;
 
     if (res && res->status == 200)
     {
@@ -195,19 +202,18 @@ std::vector<Peer> Client::get_peers(Torrent &torrent)
 bool Client::send_interested()
 {
     // 消息格式：4 字节长度 + 1 字节 ID (Interested 的 ID 是 2)
-    std::cout << "send interested\n";
+    std::cout << "发送感兴趣消息\n";
     uint8_t msg[5] = {0, 0, 0, 1, 2};
-    return send_raw(msg, 5);
+    if (!send_raw(msg, 5))
+    {
+        std::cout << "发送 Interested 消息失败\n";
+        return false;
+    }
+    return true;
 }
 
 bool Client::send_request(uint32_t index, uint32_t begin, uint32_t length)
 {
-    // 这里可以实现请求 piece 的逻辑
-    // 例如，建立与 peer 的连接，发送请求消息，接收数据等
-    // 目前只是一个占位符，返回 true 表示请求成功
-    std::cout << "Requesting piece index: " << index << std::endl;
-    // 构造请求
-
     // Request 消息格式：4字节长度(13) + 1字节ID(6) + 4字节index + 4字节begin + 4字节length
     uint8_t msg[17] = {0};
 
@@ -240,17 +246,28 @@ bool Client::send_request(uint32_t index, uint32_t begin, uint32_t length)
     return true;
 }
 
-void Client::recv_bitfield(const std::vector<std::uint8_t> &payload)
+bool Client::recv_bitfield()
 {
+    // 1. 读取 4 字节的长度前缀 (大端序)
+    uint8_t len_buf[4];
+    if (!read_exact(len_buf, 4))
+        return false;
+
+    uint32_t msg_len = (len_buf[0] << 24) | (len_buf[1] << 16) | (len_buf[2] << 8) | len_buf[3];
+
+    // 3 读取 1 字节的消息 ID
+    uint8_t msg_id;
+    if (!read_exact(&msg_id, 1))
+        return false;
+
+    // 4. 读取剩余的 Payload
+    uint32_t payload_len = msg_len - 1;
+    std::vector<uint8_t> payload(payload_len);
+    if (payload_len > 0 && !read_exact(payload.data(), payload_len))
+        return false;
+
     // 解析 Bitfield 消息的 Payload
     bit_field.clear();
     bit_field.insert(bit_field.end(), payload.begin(), payload.end());
-
-    std::cout << "[Peer] Bitfield 内容: ";
-    for (const auto &byte : bit_field)
-    {
-        std::cout << std::bitset<8>(static_cast<uint8_t>(byte)) << " ";
-    }
-    std::cout << std::endl;
-
+    return true;
 }

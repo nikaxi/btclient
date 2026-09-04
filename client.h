@@ -33,11 +33,11 @@ class Client{
     public:
     void set_bit(int idx);
     bool is_bit_set(int idx);
+    void set_piece(int idx);
 
     bool has_piece(int idx);
-    bool set_piece(int idx);
 
-    void recv_bitfield(const std::vector<std::uint8_t> &payload);
+    bool recv_bitfield();
 
     void set_peer(Peer *p) {
         peer = p;
@@ -80,19 +80,54 @@ class Client{
                   << ", Offset=" << begin 
                   << ", Size=" << (payload.size() - 8) << " bytes" << std::endl;
         
-        // TODO: 1. 将 payload.data() + 8 的数据写入本地缓存
-        // TODO: 2. 如果整个 Piece 下载完成，进行 SHA-1 校验
-        // TODO: 3. 校验通过后，写入磁盘并发送 Have 消息给其他 Peer
+        // 这里可以将数据存储到对应的 piece 缓冲区中
+        std::vector<std::uint8_t> piece_data(payload.begin() + 8, payload.end());
+        set_piece_buffer(index, piece_data);
+        // 标记该 piece 已下载
+        set_piece(index);
+        // 发送 have 消息通知对方
+        send_have(index);
+    }
+
+    void set_piece_buffer(int index, const std::vector<std::uint8_t>& buffer) {
+        int pos = index * 16384; // 每个 piece 的大小为 16KB
+        if (piece_buffer.size() < pos + buffer.size()) {
+            piece_buffer.resize(pos + buffer.size());
+        }
+        std::memcpy(piece_buffer.data() + pos, buffer.data(), buffer.size());
+        std::cout << "已存储 Piece 索引: " << index << " 的数据, 大小: " << buffer.size() << " bytes" << std::endl;
+    }
+
+    // 发送have 消息
+    bool send_have(uint32_t index) {
+        uint8_t msg[9] = {0};
+        // 1. 长度前缀 (5 = 1 + 4)
+        msg[0] = 0;
+        msg[1] = 0;     
+        msg[2] = 0;
+        msg[3] = 5;
+        // 2. 消息 ID (4 = Have)
+        msg[4] = 4;
+        // 3. 填充 Payload (大端序)
+        msg[5] = (index >> 24) & 0xFF;
+        msg[6] = (index >> 16) & 0xFF;
+        msg[7] = (index >> 8) & 0xFF;   
+        msg[8] = index & 0xFF;
+        
+        return send_raw(msg, 9);
     }
 
 
     private:
     int socket_fd;
     bool choked;
+    std::vector<std::uint8_t> local_bit_field;
     std::vector<std::uint8_t> bit_field;
     std::array<std::uint8_t, 20> peer_id;
     std::array<std::uint8_t, 20> info_hash;
     Peer *peer;
+    std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
+
 };
 
 #endif

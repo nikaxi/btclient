@@ -46,7 +46,10 @@ int main() {
                 continue;
             }
             client.handshake();
-            client.process_incoming_message();
+            if (!client.recv_bitfield()) {
+                std::cerr << "Failed to receive bitfield from peer: " << peer.to_string() << std::endl;
+                continue;
+            }
             for(;;) {
                 std::cout << "Waiting for incoming messages from peer: " << peer.to_string() << std::endl;
                 auto res = client.process_incoming_message();

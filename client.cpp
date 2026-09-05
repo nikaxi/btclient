@@ -9,6 +9,12 @@
 #include "utils.h"
 using namespace bencode;
 
+bool Client::download() {
+    for(auto &peer: peers) {
+        peer.run();
+    }
+}
+
 bool Client::process_incoming_message()
 {
     // 1. 读取 4 字节的长度前缀 (大端序)

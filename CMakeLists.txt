@@ -5,7 +5,7 @@ set(CMAKE_BUILD_TYPE "Debug")
 
 project(btclient)
 
-set(GTEST_ROOT /home/nikaxi/cleancpp/googletest)
+set(GTEST_ROOT /home/nikaxi/cpp/googletest)
 
 # Include GTest and GMock
 include_directories(${GTEST_ROOT}/googletest/include)

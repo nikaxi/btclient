@@ -39,8 +39,8 @@ class Client{
 
     bool recv_bitfield();
 
-    void set_peer(Peer *p) {
-        peer = p;
+    void add_peers(std::vector<Peer>&& peers_) {
+        peers.insert(peers.begin(), peers_.begin(), peers_.end());
     }
 
     std::vector<Peer> get_peers(Torrent &torrent);
@@ -117,6 +117,8 @@ class Client{
         return send_raw(msg, 9);
     }
 
+    bool download();
+
 
     private:
     int socket_fd;
@@ -125,7 +127,7 @@ class Client{
     std::vector<std::uint8_t> bit_field;
     std::array<std::uint8_t, 20> peer_id;
     std::array<std::uint8_t, 20> info_hash;
-    Peer *peer;
+    std::vector<Peer> peers;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
 
 };

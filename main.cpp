@@ -32,33 +32,34 @@ int main() {
 
         Client client(peer_id, torrent.info_hash);
 
-        std::vector<Peer> peers = client.get_peers(torrent);
+        client.add_peers(client.get_peers(torrent));
 
-
-        // Print the list of peers
 
         // connect() ➔ handshake() ➔ exchange_bitfield() ➔ send_interested() ➔ wait_for_unchoke() ➔ loop { send_request() & process_incoming() }。
-        for (auto &peer : peers) {
-            client.set_peer(&peer);
-            auto conn_res = client.connect();
-            if (!conn_res) {
-                std::cerr << "Failed to connect to peer: " << peer.to_string() << std::endl;
-                continue;
-            }
-            client.handshake();
-            if (!client.recv_bitfield()) {
-                std::cerr << "Failed to receive bitfield from peer: " << peer.to_string() << std::endl;
-                continue;
-            }
-            for(;;) {
-                std::cout << "Waiting for incoming messages from peer: " << peer.to_string() << std::endl;
-                auto res = client.process_incoming_message();
-                if (!res) {
-                    std::cerr << "Failed to process incoming message from peer: " << peer.to_string() << std::endl;
-                    break;
-                }
-            }
-        }
+        client.download();
+
+        // 以下内容都放到peer里去完成
+        // for (auto peer : client.p) {
+        //     client.set_peer(&peer);
+        //     auto conn_res = client.connect();
+        //     if (!conn_res) {
+        //         std::cerr << "Failed to connect to peer: " << peer.to_string() << std::endl;
+        //         continue;
+        //     }
+        //     client.handshake();
+        //     if (!client.recv_bitfield()) {
+        //         std::cerr << "Failed to receive bitfield from peer: " << peer.to_string() << std::endl;
+        //         continue;
+        //     }
+        //     for(;;) {
+        //         std::cout << "Waiting for incoming messages from peer: " << peer.to_string() << std::endl;
+        //         auto res = client.process_incoming_message();
+        //         if (!res) {
+        //             std::cerr << "Failed to process incoming message from peer: " << peer.to_string() << std::endl;
+        //             break;
+        //         }
+        //     }
+        // }
         // 从pieces map 中获取每个piece的哈希值，发出请求，下载每个piece
         // for (const auto &[index, piece_hash] : torrent.info.pieces) {
         //     // 这里可以调用Client的请求方法，传入index和piece_hash

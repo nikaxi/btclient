@@ -38,6 +38,8 @@ struct Peer  {
     int port_() {
         return (std::to_integer<int>(port[0]) << 8) | std::to_integer<int>(port[1]);
     }
+
+    void run();
 };
 
 #endif

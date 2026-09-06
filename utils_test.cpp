@@ -4,14 +4,14 @@
 
 TEST(Utils, GenerateInfoHashFromTorrentFile) {
     std::string file_path = "/home/nikaxi/debian-12.11.0-amd64-netinst.iso.torrent";
-    std::array<uint8_t, 20> info_hash = generate_info_hash(file_path);
+    auto info_hash = generate_info_hash(file_path);
     std::string str_hash_info = encode_binary(info_hash);
     std::string expected_info_hash = "6f4370df4304609a8793ce2b59178dcc8febf5e2";
     ASSERT_EQ(str_hash_info, expected_info_hash);
 }
 
 TEST(Utils, GeneratePeerId) {
-    std::array<std::uint8_t, 20> peer_id = generate_peer_id();
+    auto peer_id = generate_peer_id();
     ASSERT_EQ(peer_id.size(), 20);
     // Check that the generated peer ID is not all zeros
     std::cout << "Generated Peer ID: " << encode_binary(peer_id) << std::endl;
@@ -21,10 +21,10 @@ TEST(Utils, GeneratePeerId) {
 
 
 TEST(Utils, EncodeBinary) {
-    std::array<std::uint8_t, 20> data = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
+    auto data = std::vector<std::uint8_t>{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
                                          0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14};
     std::string encoded = encode_binary(data);
-    std::string expected = "0102030405060708090a0b0c0d0e0f1011121314";
+    std::string expected = "0102030405060708090a0b₀c₀d₀e₀f₁₀₁₁₁₂₁₃₁₄";
     ASSERT_EQ(encoded, expected);
 }
 

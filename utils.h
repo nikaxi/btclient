@@ -22,7 +22,7 @@
 
 using namespace bencode;
 
-inline std::string encode_binary(std::array<std::uint8_t, 20> &data) {
+inline std::string encode_binary(std::vector<std::uint8_t> &data) {
    std::string result;
    
    for (auto &byte : data) {
@@ -31,7 +31,7 @@ inline std::string encode_binary(std::array<std::uint8_t, 20> &data) {
    return result;
 }
 
-inline std::array<uint8_t, 20> generate_info_hash(std::string &file_path) { 
+inline std::vector<std::uint8_t> generate_info_hash(std::string &file_path) { 
     std::ifstream file(file_path, std::ios::binary);
 
     auto data = bencode::decode(file);
@@ -47,10 +47,10 @@ inline std::array<uint8_t, 20> generate_info_hash(std::string &file_path) {
     const std::string info_str = bencode::encode(dict["info"]);
     std::array<uint8_t, 20> info_hash;
     SHA1(reinterpret_cast<const unsigned char*>(info_str.data()), info_str.size(), info_hash.data());
-    return info_hash;
+    return std::vector<std::uint8_t>(info_hash.begin(), info_hash.end());
 }
-inline std::array<std::uint8_t, 20> generate_peer_id() {
-    std::array<std::uint8_t, 20> peer_id;
+inline std::vector<std::uint8_t> generate_peer_id() {
+    std::vector<std::uint8_t> peer_id(20);
     for (int i = 0; i < 20; i++) {
         peer_id[i] = static_cast<std::uint8_t>(rand() % 256);
     }

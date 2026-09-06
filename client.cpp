@@ -8,7 +8,12 @@
 #include "bencode.hpp"
 #include "utils.h"
 #include <thread>
+#include <mutex>
+
 using namespace bencode;
+
+std::mutex mtx; // 用于保护 local_bit_field 的互斥锁
+
 
 bool Client::download() {
     for(auto &peer: peers) {
@@ -22,20 +27,25 @@ bool Client::download() {
 // 内部辅助：从 TCP 流中精确读取指定长度的数据
 void Client::set_piece(int idx)
 {
+    std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
     set_bit(idx);
     std::cout << "已下载 Piece 索引: " << idx << std::endl;
 }
 
 void Client::set_bit(int idx)
 {
+    
     auto byte_idx = idx / 8;
     auto bit_idx = idx % 8;
     if (byte_idx >= local_bit_field.size())
     {
         local_bit_field.resize(byte_idx + 1, 0);
     }
+
+    std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
     local_bit_field[byte_idx] |= static_cast<std::uint8_t>(1 << (7 - bit_idx));
 }
+
 
 bool Client::is_bit_set(int idx)
 {
@@ -45,8 +55,10 @@ bool Client::is_bit_set(int idx)
     {
         return false;
     }
+    std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
     return static_cast<int>(local_bit_field[byte_idx] & static_cast<int>(1 << (7 - bit_idx))) != 0;
 }
+
 
 std::vector<Peer> Client::get_peers(Torrent &torrent)
 {

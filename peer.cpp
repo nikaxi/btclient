@@ -221,7 +221,12 @@ bool Peer::process_incoming_message()
         std::cout << "[Peer] 收到 Unchoke (解除阻塞)，可以请求数据了！" << std::endl;
         for (int i = 0; i < bit_field.size() * 8; ++i)
         {
-            send_request(i, 0, 16384); // 请求前 5 个 Piece 的前 16KB 数据
+            if (client.is_bit_set(i))
+                continue; // 已下载，跳过
+            else {
+                send_request(i, 0, 16384); 
+                client.set_piece(i); // 标记该 piece 开始下载
+            }
         }
         break;
     case 2: // Unchoke

@@ -10,6 +10,8 @@
 #include <cstring>
 #include <stdexcept>
 #include <memory>
+#include <mutex>
+
 // 跨平台 Socket 头文件
 #ifdef _WIN32
     #include <winsock2.h>
@@ -23,6 +25,7 @@
 #endif
 
 
+
 struct Torrent;
 const int PORT = 6882;
 
@@ -32,7 +35,6 @@ class Client : public std::enable_shared_from_this<Client> {
     bool is_bit_set(int idx);
     void set_piece(int idx);
 
-    bool has_piece(int idx);
     void add_peers(std::vector<Peer>&& peers_) {
         peers = std::move(peers_);
     }

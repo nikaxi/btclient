@@ -37,7 +37,7 @@ int main() {
 
         client.download();
 
-        for(;;) {
+        while(client.download_finish() == false) {
             // if (client.download_finish()) {
             //     std::cout << "下载完成！" << std::endl;
             //     break;

@@ -61,9 +61,16 @@ class Client : public std::enable_shared_from_this<Client> {
             if (!is_bit_set(i)) {
                 std::cout << "Piece " << i << " 尚未下载完成" << std::endl;
                 return false;
+            } else {
+                std::cout << "Piece " << i << " 下载完成" << std::endl;
+                progress++;
             }
         }
         return true;
+    }
+
+    int get_progress() const {
+        return progress;
     }
 
 
@@ -75,6 +82,7 @@ class Client : public std::enable_shared_from_this<Client> {
     std::vector<std::uint8_t> peer_id;
     std::vector<std::uint8_t> local_bit_field;
     std::vector<Peer> peers;
+    int progress = 0; // 下载进度，已下载的 piece 数量
     std::vector<std::uint8_t> info_hash;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
 

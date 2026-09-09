@@ -180,7 +180,6 @@ bool Peer::recv_bitfield()
         return false;
 
     // 解析 Bitfield 消息的 Payload
-    bit_field.clear();
     bit_field.insert(bit_field.end(), payload.begin(), payload.end());
     return true;
 }

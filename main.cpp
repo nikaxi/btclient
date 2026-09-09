@@ -37,12 +37,12 @@ int main() {
 
         client.download();
 
+        sleep(10); // 等待一秒钟再检查
+        std::cout << "开始下载..." << client.download_finish() << std::endl;
+        
+        sleep(10); // 等待一秒钟再检查
         while(client.download_finish() == false) {
-            // if (client.download_finish()) {
-            //     std::cout << "下载完成！" << std::endl;
-            //     break;
-            // }
-            sleep(100); // 等待一秒钟再检查
+            std::cout << "下载未完成，继续等待..." << client.get_progress() << std::endl;
         }
 
 

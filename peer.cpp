@@ -224,7 +224,7 @@ bool Peer::process_incoming_message()
                 continue; // 已下载，跳过
             else {
                 send_request(i, 0, 16384); 
-                client.set_piece(i); // 标记该 piece 开始下载
+                client.set_bit(i); // 标记该 piece 开始下载
             }
         }
         break;

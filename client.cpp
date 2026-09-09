@@ -67,7 +67,7 @@ std::vector<Peer> Client::get_peers(Torrent &torrent)
     std::string host = parse_announce_url(torrent.announce);
     httplib::Client cli(host);
     std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(torrent.info_hash.begin(), torrent.info_hash.end())) + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) + "&port=" + std::to_string(PORT) + "&uploaded=0&event=started&downloaded=0&left=" + std::to_string(torrent.info.length);
-    std::cout << "URL: " << url << std::endl;
+    // std::cout << "URL: " << url << std::endl;
 
     cli.set_follow_location(true); // follow redirects
     httplib::Result res = cli.Get(url);

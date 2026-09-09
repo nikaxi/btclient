@@ -214,14 +214,14 @@ bool Peer::process_incoming_message()
     switch (msg_id)
     {
     case 0:
-        std::cout << "[Peer] 收到 Choke (被阻塞)" << std::endl;
+        std::cout << "[Peer]" << to_string() << " 收到 Choke (被阻塞)" << std::endl;
         break;
     case 1: // Unchoke
-        std::cout << "[Peer] 收到 Unchoke (解除阻塞)，可以请求数据了！" << std::endl;
+        std::cout << "[Peer]" << to_string() << " 收到 Unchoke (解除阻塞)，可以请求数据了！" << std::endl;
         for (int i = 0; i < bit_field.size() * 8; ++i)
         {
-            if (client.is_bit_set(i))
-                continue; // 已下载，跳过
+            if (client.is_bit_set(i) || ((bit_field[i / 8] & (1 << (7 - (i % 8)))) == 0))
+                continue; // 已下载，跳过, 或者对方没有分片
             else {
                 send_request(i, 0, 16384); 
                 client.set_bit(i); // 标记该 piece 开始下载

@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <memory>
 #include <mutex>
+#include "torrent.h"
 
 // 跨平台 Socket 头文件
 #ifdef _WIN32
@@ -26,7 +27,6 @@
 
 
 
-struct Torrent;
 const int PORT = 6882;
 
 class Client : public std::enable_shared_from_this<Client> {
@@ -40,6 +40,11 @@ class Client : public std::enable_shared_from_this<Client> {
     }
 
     std::vector<Peer> get_peers(Torrent &torrent);
+
+    void set_local_bit_field(const Torrent &torrent) {
+        std::cout << "设置本地 bit field，大小: " << torrent.info.pieces.size() << " bits" << std::endl;
+        local_bit_field.resize(torrent.info.pieces.size(), 0);
+    }
 
     Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_):peer_id(peer_id_), info_hash(info_hash_){
     }

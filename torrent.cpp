@@ -83,7 +83,7 @@ Torrent::Torrent(std::ifstream &f_stream) {
             for (const auto &path_part : file_name) {
                 full_path += std::get<bencode::string>(path_part) + "/";
             }
-            std::cout << "File: " << full_path << ", Length: " << std::get<bencode::integer>(file_dict["length"]) << std::endl;
+            // std::cout << "File: " << full_path << ", Length: " << std::get<bencode::integer>(file_dict["length"]) << std::endl;
         }
         info.length = total_length;
     } else {
@@ -98,9 +98,10 @@ Torrent::Torrent(std::ifstream &f_stream) {
 
     info.pieces = std::move(split_pieces(v));
 
-    std::cout << "name:" << info.name << std::endl;
-    std::cout << "length:" << info.length << std::endl;
-    std::cout << "piece_length:" << info.piece_length << std::endl;
+
+    // std::cout << "name:" << info.name << std::endl;
+    // std::cout << "length:" << info.length << std::endl;
+    // std::cout << "piece_length:" << info.piece_length << std::endl;
 
     set_hash(info_dic);
 }

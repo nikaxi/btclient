@@ -17,9 +17,16 @@ void Peer::run()
     }
     for (;;)
     {
-        auto res = process_incoming_message();
+        auto i = client.get_task();
+        if (i == -1)
+        {
+            std::cout << "[" << std::this_thread::get_id() << "][Peer] 没有更多任务，退出线程" << std::endl;
+            break; // 没有更多任务，退出线程
+        }
+        auto res = process_incoming_message(i);
         if (!res)
         {
+             client.reset_task(i); // 重置任务状态
             std::cerr << "Failed to process incoming message from peer: " << to_string() << std::endl;
             break;
         }
@@ -103,9 +110,9 @@ void Peer::handle_piece_message(const std::vector<uint8_t> &payload)
     uint32_t index = (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
     uint32_t begin = (payload[4] << 24) | (payload[5] << 16) | (payload[6] << 8) | payload[7];
 
-    std::cout << "[" << std::this_thread::get_id() << "][Peer] 收到 Piece 数据: Index=" << index
-              << ", Offset=" << begin
-              << ", Size=" << (payload.size() - 8) << " bytes" << std::endl;
+    // std::cout << "[" << std::this_thread::get_id() << "][Peer] 收到 Piece 数据: Index=" << index
+    //           << ", Offset=" << begin
+    //           << ", Size=" << (payload.size() - 8) << " bytes" << std::endl;
 
     // 这里可以将数据存储到对应的 piece 缓冲区中
     if (piece_buffer.size() < begin + (payload.size() - 8))
@@ -192,7 +199,7 @@ bool Peer::recv_bitfield()
     bit_field.insert(bit_field.end(), payload.begin(), payload.end());
     return true;
 }
-bool Peer::process_incoming_message()
+bool Peer::process_incoming_message(int i)
 {
     auto thread_id = std::this_thread::get_id();
     auto len = client.get_piece_len();
@@ -224,27 +231,22 @@ bool Peer::process_incoming_message()
     // 5. 根据 ID 分发处理
     switch (msg_id)
     {
-    case 0:  // Choke
+    case 0: // Choke
         std::cout << "[" << thread_id << "][Peer]" << to_string() << " 收到 Choke (被阻塞)" << std::endl;
         break;
     case 1: // Unchoke
     {
-        auto tasks = client.get_task();
-        for (const auto &i : tasks)
+        if ((bit_field[i / 8] & (1 << (7 - (i % 8)))) == 0)
         {
-            if ((bit_field[i / 8] & (1 << (7 - (i % 8)))) == 0)
+            std::cout << "[" << thread_id << "][Peer] Piece " << i << ": 对方没有该分片，跳过" << std::endl;
+        }
+        else
+        {
+            for (int offset = 0; offset < len; offset += 16384)
             {
-                std::cout << "[" << thread_id << "][Peer] Piece " << i << ": 对方没有该分片，跳过" << std::endl;
-                continue; // 对方没有该分片，跳过
-            }
-            else
-            {
-                for (int offset = 0; offset < len; offset += 16384)
-                {
-                    std::cout << "[" << thread_id << "][Peer] 发送请求: Piece Index=" << i << ", Offset=" << offset << ", Length=" << len << std::endl;
-                    uint32_t request_length = std::min(static_cast<uint32_t>(16384), static_cast<uint32_t>(len - offset));
-                    send_request(i, offset, request_length);
-                }
+                std::cout << "[" << thread_id << "][Peer] 发送请求: Piece Index=" << i << ", Offset=" << offset << ", Length=" << len << std::endl;
+                uint32_t request_length = std::min(static_cast<uint32_t>(16384), static_cast<uint32_t>(len - offset));
+                send_request(i, offset, request_length);
             }
         }
     }
@@ -253,8 +255,28 @@ bool Peer::process_incoming_message()
         std::cout << "[" << thread_id << "][Peer] 收到 Interested (对方感兴趣)" << std::endl;
         break;
     case 7: // Piece (实际数据)
-        std::cout << "[" << thread_id << "][Peer] 收到 Piece 数据, 长度: " << payload.size() << " bytes" << std::endl;
         handle_piece_message(payload);
+        // 是否已经下载完成
+        if (client.is_bit_set(i)) {
+            auto i = client.get_task();
+            if (i != -1)
+            {
+                if ((bit_field[i / 8] & (1 << (7 - (i % 8)))) == 0)
+                {
+                    std::cout << "[" << thread_id << "][Peer] Piece " << i << ": 对方没有该分片，跳过" << std::endl;
+                }
+                else
+                {
+                    for (int offset = 0; offset < len; offset += 16384)
+                    {
+                        std::cout << "[" << thread_id << "][Peer] 发送请求: Piece Index=" << i << ", Offset=" << offset << ", Length=" << len << std::endl;
+                        uint32_t request_length = std::min(static_cast<uint32_t>(16384), static_cast<uint32_t>(len - offset));
+                        send_request(i, offset, request_length);
+                    }
+                }
+            }
+
+        }
         break;
     default:
         std::cout << "[" << thread_id << "][Peer] 收到未处理的消息 ID: " << (int)msg_id << std::endl;

@@ -44,7 +44,8 @@ public:
 
     void set_local_bit_field(const Torrent &torrent)
     {
-        local_bit_field.resize(torrent.info.pieces.size(), 0);
+        auto bitfield_size = (torrent.info.pieces.size() + 7) / 8; // 计算 bitfield 的字节数
+        local_bit_field.resize(bitfield_size, 0); // 初始化为全 0，
     }
 
     Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_) : peer_id(peer_id_), info_hash(info_hash_)
@@ -61,8 +62,9 @@ public:
                 piece_buffer.resize(pos + buffer.size());
             }
             std::memcpy(piece_buffer.data() + pos, buffer.data(), buffer.size());
+            auto total = local_bit_field.size() * 8;
             std::cout << "[" << std::this_thread::get_id() << "][Client] 已存储 Piece 索引: " << index << " 的数据, 大小: " << buffer.size() << " bytes" << std::endl;
-            std::cout << "[" << std::this_thread::get_id() << "][Client] 当前下载进度: " << progress++ << " / " << local_bit_field.size() << std::endl;
+            std::cout << "[" << std::this_thread::get_id() << "][Client] 当前下载进度: " << progress++ << " / " << total  << std::endl;
         }
         set_bit(index); // 标记该 piece 已下载
     }
@@ -92,7 +94,7 @@ public:
         std::cout << std::endl;
     }
 
-    std::vector<std::size_t> get_task();
+    int get_task();
 
     std::vector<std::uint8_t> &get_info_hash()
     {
@@ -102,6 +104,12 @@ public:
     int get_piece_len() const
     {
         return piece_length;
+    }
+
+    void reset_task(int index)
+    {
+        std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
+        tasks.erase(index); // 移除任务状态，表示该 piece 可以重新下载
     }
 
 private:
@@ -114,7 +122,8 @@ private:
     std::vector<std::uint8_t> info_hash;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
     std::mutex mtx;                         // 用于保护 local_bit_field 和 piece_buffer 的互斥锁
-    int piece_length = 0;
+    std::map<int, int> tasks; // 用于存储每个 piece的下载状态，key 是 piece 索引，value 是下载状态（1: 下载中, 2: 已下载）
+    int piece_length; // 每个 piece 的长度
 };
 
 #endif

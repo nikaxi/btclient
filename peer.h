@@ -75,7 +75,7 @@ struct Peer
     bool recv_bitfield();
     bool send_interested();
     bool send_request(uint32_t index, uint32_t begin, uint32_t length);
-    bool process_incoming_message();
+    bool process_incoming_message(int index);
     void send_have(uint32_t index);
 
     bool read_exact(uint8_t *buffer, size_t len);

@@ -134,21 +134,17 @@ bool Client::download_finish()
 }
 
 
-std::vector<std::size_t> Client::get_task()
+int Client::get_task()
 {
-    std::vector<std::size_t> tasks;
     std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
-    for (size_t i = 0; i < local_bit_field.size() * 8 && tasks.size() < 5; ++i)
+    for (size_t i = 0; i < local_bit_field.size() * 8 ; ++i)
     {
-        if (!is_bit_set_internal(i)) {// 如果该 piece 未下载且任务数量小于5
-            tasks.push_back(i);
-            set_bit_internal(i); // 标记该 piece 已被分配，避免重复分配
-        } 
-        else if (is_bit_set_internal(i)) {
-            std::cout << "[" << std::this_thread::get_id() << "][Client] Piece " << i << ": 已下载，跳过" << std::endl;
+        if (!is_bit_set_internal(i) || tasks.find(i) == tasks.end()){
+            tasks[i] = 1; // 标记为下载中
+            return i;
         } else {
-            std::cout << "[" << std::this_thread::get_id() << "][Client] Piece " << i << ": 队列满了，跳过" << std::endl;
+            tasks.at(i) = 2; // 标记为已下载
         }
     }
-    return tasks;
+    return -1;
 }

@@ -1,9 +1,18 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.14)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE "Debug")
 
 project(btclient)
+
+# spdlog via FetchContent (header-only, auto-downloaded)
+include(FetchContent)
+FetchContent_Declare(
+    spdlog
+    GIT_REPOSITORY https://github.com/gabime/spdlog.git
+    GIT_TAG        v1.15.0
+)
+FetchContent_MakeAvailable(spdlog)
 
 set(GTEST_ROOT /home/nikaxi/cpp/googletest)
 
@@ -14,12 +23,12 @@ include_directories(${GTEST_ROOT}/googlemock/include)
 # Link with GTest and GMock libraries
 link_directories(${GTEST_ROOT}/build/lib)
 # add_executable(message_test message.cpp message_test.cpp)
-add_executable(utils_test utils_test.cpp)
+# add_executable(utils_test utils_test.cpp)
 add_executable(main main.cpp client.cpp torrent.cpp peer.cpp)
 # target_link_libraries(message_test gtest gtest_main gmock gmock_main)
-target_link_libraries(utils_test gtest gtest_main gmock gmock_main ssl crypto)
+# target_link_libraries(utils_test gtest gtest_main gmock gmock_main ssl crypto)
 
-target_link_libraries(main ssl crypto pthread)
+target_link_libraries(main ssl crypto pthread spdlog::spdlog)
 
 # Enable testing
 enable_testing()

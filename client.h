@@ -13,7 +13,8 @@
 #include <mutex>
 #include "torrent.h"
 #include <thread>
-
+#include <variant>
+#include "log.h"
 // 跨平台 Socket 头文件
 #ifdef _WIN32
 #include <winsock2.h>
@@ -34,18 +35,17 @@ public:
     void set_bit(int idx);
     bool is_bit_set(int idx);
 
-
     void add_peers(std::vector<Peer> &&peers_)
     {
         peers = std::move(peers_);
     }
 
-    std::vector<Peer> get_peers(Torrent &torrent);
+    void get_peers(Torrent &torrent);
 
     void set_local_bit_field(const Torrent &torrent)
     {
         auto bitfield_size = (torrent.info.pieces.size() + 7) / 8; // 计算 bitfield 的字节数
-        local_bit_field.resize(bitfield_size, 0); // 初始化为全 0，
+        local_bit_field.resize(bitfield_size, 0);                  // 初始化为全 0，
     }
 
     Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_) : peer_id(peer_id_), info_hash(info_hash_)
@@ -54,19 +54,26 @@ public:
 
     void set_piece_buffer(int index, const std::vector<std::uint8_t> &buffer)
     {
+        auto thread_id = thread_id_str(std::this_thread::get_id());
+        std::lock_guard<std::mutex> lock(mtx);                     // 确保线程安全
+        if (tasks.find(index) != tasks.end() && tasks[index] == 2) // 检查该 piece 是否正在下载
         {
-            std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
-            int pos = index * piece_length;      
+            return;
+        }
+        if (tasks.find(index) != tasks.end() && tasks[index] == 1) // 检查该 piece 是否正在下载
+        {
+            tasks[index] = 2; // 标记该 piece 已下载
+            progress++;       // 更新下载进度
+
+            int pos = index * piece_length;
             if (piece_buffer.size() < pos + buffer.size())
             {
                 piece_buffer.resize(pos + buffer.size());
             }
             std::memcpy(piece_buffer.data() + pos, buffer.data(), buffer.size());
-            auto total = local_bit_field.size() * 8;
-            std::cout << "[" << std::this_thread::get_id() << "][Client] 已存储 Piece 索引: " << index << " 的数据, 大小: " << buffer.size() << " bytes" << std::endl;
-            std::cout << "[" << std::this_thread::get_id() << "][Client] 当前下载进度: " << progress++ << " / " << total  << std::endl;
+            set_bit_internal(index);
+            LOG_INFO("[{}] task: {} 下载完成", thread_id, index);
         }
-        set_bit(index); // 标记该 piece 已下载
     }
 
     void download();
@@ -109,7 +116,7 @@ public:
     void reset_task(int index)
     {
         std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
-        tasks.erase(index); // 移除任务状态，表示该 piece 可以重新下载
+        tasks.erase(index);                    // 移除任务状态，表示该 piece 可以重新下载
     }
 
 private:
@@ -122,8 +129,8 @@ private:
     std::vector<std::uint8_t> info_hash;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
     std::mutex mtx;                         // 用于保护 local_bit_field 和 piece_buffer 的互斥锁
-    std::map<int, int> tasks; // 用于存储每个 piece的下载状态，key 是 piece 索引，value 是下载状态（1: 下载中, 2: 已下载）
-    int piece_length; // 每个 piece 的长度
+    std::map<int, int> tasks;               // 用于存储每个 piece的下载状态，key 是 piece 索引，value 是下载状态（1: 下载中, 2: 已下载）
+    int piece_length;                       // 每个 piece 的长度
 };
 
 #endif

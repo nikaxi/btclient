@@ -41,7 +41,7 @@ bool Client::is_bit_set_internal(int idx)
     {
         return false;
     }
-    return static_cast<int>(local_bit_field[byte_idx] & static_cast<int>(1 << (7 - bit_idx))) != 0;
+    return static_cast<std::uint8_t>(local_bit_field[byte_idx] & static_cast<std::uint8_t>(1 << (7 - bit_idx))) != 0;
 }
 
 
@@ -70,47 +70,46 @@ bool Client::is_bit_set(int idx)
     return static_cast<int>(local_bit_field[byte_idx] & static_cast<int>(1 << (7 - bit_idx))) != 0;
 }
 
-std::vector<Peer> Client::get_peers(Torrent &torrent)
+void Client::get_peers(Torrent &torrent)
 {
-    std::vector<Peer> peers_vec;
     // send request to announce_url
     std::string host = parse_announce_url(torrent.announce);
     httplib::Client cli(host);
-    std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(torrent.info_hash.begin(), torrent.info_hash.end())) + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) + "&port=" + std::to_string(PORT) + "&uploaded=0&event=started&downloaded=0&left=" + std::to_string(torrent.info.length);
-    // std::cout << "URL: " << url << std::endl;
-
     cli.set_follow_location(true); // follow redirects 解决302问题
+    std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(torrent.info_hash.begin(), torrent.info_hash.end())) + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) + "&port=" + std::to_string(PORT) + "&uploaded=0&event=started&downloaded=0&left=" + std::to_string(torrent.info.length);
 
     httplib::Result res = cli.Get(url);
-
     if (res && res->status == 200)
     {
-        auto decoded = bencode::decode(res->body);
-        auto peers = std::get<bencode::string>(decoded["peers"]);
-        for (auto i = 0; i < peers.size(); i += 6)
+        auto d = bencode::decode(res->body);
+        // interval 900 秒
+        auto interval = std::get_if<bencode::integer>(&d["interval"]);
+        auto peers_data = std::get_if<bencode::string>(&d["peers"]);
+
+        const char* raw = peers_data->data();
+        auto len = peers_data->size();
+        for (auto i = 0; i+6 <= len; i += 6)
         {
             std::array<std::byte, 4> ip;
             std::array<std::byte, 2> port;
             for (auto j = 0; j < 4; j++)
             {
-                ip[j] = static_cast<std::byte>(peers[i + j]);
+                ip[j] = static_cast<std::byte>(raw[i + j]);
             }
             for (auto j = 0; j < 2; j++)
             {
-                port[j] = static_cast<std::byte>(peers[i + j + 4]);
+                port[j] = static_cast<std::byte>(raw[i + j + 4]);
             }
             // 传递client的引用给Peer，以便Peer可以访问Client的方法和数据
-            peers_vec.push_back(Peer(ip, port, *this));
+            peers.push_back(Peer(ip, port, *this));
         }
     }
     else
     {
         std::cout << "Error: " << res.error() << std::endl;
     }
-
     piece_length = torrent.info.piece_length; // 设置 piece_length
-
-    return peers_vec;
+    LOG_INFO("[初始化peers数量] {}", peers.size()); 
 }
 
 
@@ -137,13 +136,20 @@ bool Client::download_finish()
 int Client::get_task()
 {
     std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
+    auto thread_id = thread_id_str(std::this_thread::get_id());
     for (size_t i = 0; i < local_bit_field.size() * 8 ; ++i)
     {
-        if (!is_bit_set_internal(i) || tasks.find(i) == tasks.end()){
-            tasks[i] = 1; // 标记为下载中
-            return i;
+        if (is_bit_set_internal(i)){
+            continue;
+        } 
+        if (tasks.find(i) != tasks.end()) {
+            if (tasks.at(i) == 1) {
+                continue;
+            }
         } else {
-            tasks.at(i) = 2; // 标记为已下载
+            tasks[i] = 1;
+            LOG_INFO("[{}] get task: {}", thread_id, i);
+            return i;
         }
     }
     return -1;

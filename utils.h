@@ -18,9 +18,34 @@
 #include <format>
 #include <openssl/sha.h>
 #include <iomanip>
+#include <map>
 #include "bencode.hpp"
+#include <sys/socket.h>
+#include <variant>
+
+#include <spdlog/spdlog.h>
 
 using namespace bencode;
+
+inline std::string thread_id_str(std::thread::id && id) {
+    std::ostringstream oss;
+    oss << id;
+    return oss.str();
+}
+inline void log_with_thread_id(const char* msg = "") {
+    spdlog::info("[{}] {}", thread_id_str(std::this_thread::get_id()), msg);
+}
+
+inline bool is_socket_sendable(int sockfd) {
+    int error = 0;
+    socklen_t len = sizeof(error);
+
+    int ret = ::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, &len);
+    if (ret < 0) return false ;
+
+    if (error != 0) return false;
+    return true;
+}
 
 inline std::string encode_binary(std::vector<std::uint8_t> &data) {
    std::string result;
@@ -121,6 +146,14 @@ inline std::map<std::uint32_t, std::vector<std::uint8_t>> split_pieces(const std
         pieces_map[static_cast<std::uint32_t>(i)] = piece_hash;
     }
     return pieces_map;
+}
+
+
+inline void parse_announce(std::string& body) {
+    auto d = bencode::decode(body);
+    auto interval = std::get_if<bencode::integer>(&d["interval"].base());
+    auto peers = std::get_if<bencode::string>(&d["peers"].base());
+    // todo 待完善
 }
 
 #endif

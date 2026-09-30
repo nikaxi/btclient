@@ -5,6 +5,7 @@
 #include "client.h"
 #include "peer.h"
 #include "torrent.h"
+#include "log.h"
 
 
 
@@ -18,6 +19,7 @@ extern const int PORT;
 // "d8:announce18:http://tracker.com10:created by14:KTorrent 2.1.413:creation datei1182163277ee"
 // /home/nikaxi/cpp-bencoding-master/sample/inputs/sample1.torrent
 int main() {
+    init_logging();  // 日志写入 btclient.log，stdout 只打印 info 及以上
     std::string torrent_file_path = "/home/nikaxi/debian.torrent";
     // std::string torrent_file_path = "/home/nikaxi/files.torrent";
     try {
@@ -27,13 +29,14 @@ int main() {
         // download pieces
         std::cout << "announce: " << torrent.announce << std::endl;
 
+        // 生成peer id标识自己
         std::vector<std::uint8_t> peer_id = generate_peer_id();
 
         std::vector<std::uint8_t> info_hash = std::vector<std::uint8_t>(torrent.info_hash.begin(), torrent.info_hash.end());
         Client client(peer_id, info_hash);
 
         client.set_local_bit_field(torrent);
-        client.add_peers(client.get_peers(torrent));
+        client.get_peers(torrent);
 
         client.download();
         

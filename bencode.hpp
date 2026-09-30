@@ -54,16 +54,16 @@ namespace bencode {
     // 映射概念: 可迭代 + 有 key_type/mapped_type + key 是类字符串
     template<typename T>
     concept mapping = iterable<T> && requires {
-      typename T::key_type;
-      typename T::mapped_type;
+      typename T::key_type;    
+      typename T::mapped_type; // 要求存在嵌套类型
       requires stringish<typename T::key_type>;
     };
 
   } // namespace detail
 
   // Variant 操作的特化点(自定义点对象)，允许同时支持 std::variant 和 boost::variant
-  template<template<typename ...> typename T>
-  struct variant_traits;
+  template<template<typename ...> typename T>  // T是一个支持任意多个类型参数的模板
+  struct variant_traits;  // 主要用于模板特化
 
   // ===== 宏: 生成 map_proxy 的单参数转发函数 =====
   // specs 通常是 "const" 或空
@@ -72,7 +72,7 @@ namespace bencode {
   decltype(auto) name(T &&t) specs {                                          \
     return proxy_->name(std::forward<T>(t));                                  \
   }
-
+  // sizeof...(Args)  妖魔鬼怪的语法
   // ===== 宏: 生成 map_proxy 的多参数转发函数 =====
 #define BENCODE_MAP_PROXY_FN_N(name, specs)                                   \
   template<typename ...T>                                                     \

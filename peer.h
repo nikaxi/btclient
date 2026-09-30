@@ -11,7 +11,6 @@
 #include <cstring>
 #include <stdexcept>
 #include <memory>
-// 跨平台 Socket 头文件
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -23,6 +22,8 @@
 #include <unistd.h>
 
 #endif
+
+#include "utils.h"
 
 class Client; // 前向声明
 
@@ -69,8 +70,8 @@ struct Peer
     }
 
     void run();
-    void connect();
-    // handshake()、send_interested()、wait_for_unchoke()、send_request()、process_incoming() 等方法可以在这里实现
+    bool connect();
+
     void handshake();
     bool recv_bitfield();
     bool send_interested();
@@ -81,8 +82,13 @@ struct Peer
     bool read_exact(uint8_t *buffer, size_t len);
     bool send_raw(const uint8_t *data, size_t len)
     {
-        size_t sent = 0;
+        // 检查socket_fd 
+        if (!is_socket_sendable(socket_fd)) {
+            log_with_thread_id("socket_fd 不可用, 无法发送数据");
+            return false;
+        }
 
+        size_t sent = 0;
         while (sent < len)
         {
             ssize_t res = ::send(socket_fd, data + sent, len - sent, 0);
@@ -94,7 +100,7 @@ struct Peer
         return true;
     }
 
-    void handle_piece_message(const std::vector<uint8_t> &payload);
+    bool handle_piece_message(const std::vector<uint8_t> &payload);
 
 
     int socket_fd;

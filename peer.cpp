@@ -1,46 +1,49 @@
 #include "peer.h"
 #include "client.h"
+#include "utils.h"
 #include <thread>
 
 void Peer::run()
 {
-    connect();
+    if (!connect()) return;
+
     handshake();
     if (!recv_bitfield())
-    {
-        std::cerr << "Failed to receive bitfield from peer: " << to_string() << std::endl;
+    { 
+        log_with_thread_id("Failed to receive bitfield from peer:");
         return;
     }
     if (!send_interested())
     {
         return;
     }
+    auto thread_id = thread_id_str(std::this_thread::get_id());
+    auto i = client.get_task();
     for (;;)
     {
-        auto i = client.get_task();
         if (i == -1)
         {
-            std::cout << "[" << std::this_thread::get_id() << "][Peer] 没有更多任务，退出线程" << std::endl;
+            log_with_thread_id("[Peer] 没有更多人物，退出线程");
             break; // 没有更多任务，退出线程
         }
         auto res = process_incoming_message(i);
         if (!res)
         {
-             client.reset_task(i); // 重置任务状态
-            std::cerr << "Failed to process incoming message from peer: " << to_string() << std::endl;
+            client.reset_task(i); // 重置任务状态
+            LOG_INFO("[{}]Failed to process incoming message from peer:{} " , thread_id, to_string()) ;
             break;
         }
     }
 }
 
-void Peer::connect()
+bool Peer::connect()
 {
     // 创建 socket
     socket_fd = ::socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd < 0)
     {
         std::cerr << "创建 socket 失败\n";
-        return;
+        return false;
     }
 
     // 设置 sockaddr_in 结构体
@@ -52,10 +55,11 @@ void Peer::connect()
     // 连接到 peer
     if (::connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
-        std::cerr << "连接到 peer " << to_string() << " 失败\n";
+        log_with_thread_id("connect socket_fd failed");
         ::close(socket_fd);
-        return;
+        return false;
     }
+    return true;
 }
 bool Peer::read_exact(uint8_t *buffer, size_t len)
 {
@@ -85,14 +89,13 @@ void Peer::handshake()
     // 发送 handshake 消息
     if (!send_raw(handshake_msg.data(), handshake_msg.size()))
     {
-        std::cerr << "发送 handshake 消息失败\n";
         return;
     }
     // 接收 handshake 响应
     std::vector<uint8_t> response(68);
     if (!read_exact(response.data(), response.size()))
     {
-        std::cerr << "接收 handshake 响应失败\n";
+        std::cerr << std::this_thread::get_id() << "接收 handshake 响应失败\n";
         return;
     }
     if (!std::equal(info_hash.begin(), info_hash.end(), response.begin() + 28))
@@ -102,17 +105,16 @@ void Peer::handshake()
     }
 }
 
-void Peer::handle_piece_message(const std::vector<uint8_t> &payload)
+bool Peer::handle_piece_message(const std::vector<uint8_t> &payload)
 {
-    if (payload.size() < 8)
-        return; // 至少需要 4(index) + 4(begin) 字节
+    if (payload.size() < 8) {
+        log_with_thread_id("payload 字节不足8");
+        return false; // 至少需要 4(index) + 4(begin) 字节
+    }
 
     uint32_t index = (payload[0] << 24) | (payload[1] << 16) | (payload[2] << 8) | payload[3];
     uint32_t begin = (payload[4] << 24) | (payload[5] << 16) | (payload[6] << 8) | payload[7];
 
-    // std::cout << "[" << std::this_thread::get_id() << "][Peer] 收到 Piece 数据: Index=" << index
-    //           << ", Offset=" << begin
-    //           << ", Size=" << (payload.size() - 8) << " bytes" << std::endl;
 
     // 这里可以将数据存储到对应的 piece 缓冲区中
     if (piece_buffer.size() < begin + (payload.size() - 8))
@@ -125,7 +127,13 @@ void Peer::handle_piece_message(const std::vector<uint8_t> &payload)
     if (begin + (payload.size() - 8) >= client.get_piece_len())
     {
         client.set_piece_buffer(index, piece_buffer);
-        send_have(index);
+        piece_buffer.clear(); // 清空缓冲区，为下一个 piece 做准备
+        // send_have(index);  // 纯下载不需要发送have 消息
+        // 分片下载完成
+        return true;
+    } else {
+        // 未完成
+        return false;
     }
 }
 bool Peer::send_interested()
@@ -200,7 +208,7 @@ bool Peer::recv_bitfield()
     return true;
 }
 bool Peer::process_incoming_message(int i)
-{
+{   bool finished = false;
     auto thread_id = std::this_thread::get_id();
     auto len = client.get_piece_len();
     // 1. 读取 4 字节的长度前缀 (大端序)
@@ -244,7 +252,6 @@ bool Peer::process_incoming_message(int i)
         {
             for (int offset = 0; offset < len; offset += 16384)
             {
-                std::cout << "[" << thread_id << "][Peer] 发送请求: Piece Index=" << i << ", Offset=" << offset << ", Length=" << len << std::endl;
                 uint32_t request_length = std::min(static_cast<uint32_t>(16384), static_cast<uint32_t>(len - offset));
                 send_request(i, offset, request_length);
             }
@@ -254,10 +261,10 @@ bool Peer::process_incoming_message(int i)
     case 2:
         std::cout << "[" << thread_id << "][Peer] 收到 Interested (对方感兴趣)" << std::endl;
         break;
-    case 7: // Piece (实际数据)
-        handle_piece_message(payload);
+    case 7:  { // Piece (实际数据) 
+        finished = handle_piece_message(payload);
         // 是否已经下载完成
-        if (client.is_bit_set(i)) {
+        if (finished) {
             auto i = client.get_task();
             if (i != -1)
             {
@@ -269,7 +276,6 @@ bool Peer::process_incoming_message(int i)
                 {
                     for (int offset = 0; offset < len; offset += 16384)
                     {
-                        std::cout << "[" << thread_id << "][Peer] 发送请求: Piece Index=" << i << ", Offset=" << offset << ", Length=" << len << std::endl;
                         uint32_t request_length = std::min(static_cast<uint32_t>(16384), static_cast<uint32_t>(len - offset));
                         send_request(i, offset, request_length);
                     }
@@ -278,6 +284,7 @@ bool Peer::process_incoming_message(int i)
 
         }
         break;
+    }
     default:
         std::cout << "[" << thread_id << "][Peer] 收到未处理的消息 ID: " << (int)msg_id << std::endl;
         break;

@@ -93,8 +93,14 @@ struct Peer
         {
             ssize_t res = ::send(socket_fd, data + sent, len - sent, 0);
             // 发送失败或对端断开
-            if (res <= 0)
-                return false;
+            if (res <= 0) {
+                if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    continue; // 非阻塞模式下，继续尝试发送
+                } else {
+                    log_with_thread_id("send failed or connection closed");
+                    return false;
+                }
+            }
             sent += res;
         }
         return true;

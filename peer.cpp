@@ -39,7 +39,7 @@ void Peer::run()
 bool Peer::connect()
 {
     // 创建 socket
-    socket_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    socket_fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (socket_fd < 0)
     {
         std::cerr << "创建 socket 失败\n";
@@ -55,9 +55,11 @@ bool Peer::connect()
     // 连接到 peer
     if (::connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
-        log_with_thread_id("connect socket_fd failed");
-        ::close(socket_fd);
-        return false;
+        if (errno != EINPROGRESS)
+        {
+            log_with_thread_id("connect socket_fd failed");
+            return false;
+        } 
     }
     return true;
 }
@@ -67,8 +69,14 @@ bool Peer::read_exact(uint8_t *buffer, size_t len)
     while (received < len)
     {
         ssize_t n = ::recv(socket_fd, reinterpret_cast<char *>(buffer + received), len - received, 0);
-        if (n <= 0)
+        if (n <= 0) {
+            if (n == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                continue;
+            } else {
+                log_with_thread_id("recv failed or connection closed");
+            }
             return false; // 连接断开或出错
+        }
         received += n;
     }
     return true;
@@ -95,12 +103,12 @@ void Peer::handshake()
     std::vector<uint8_t> response(68);
     if (!read_exact(response.data(), response.size()))
     {
-        std::cerr << std::this_thread::get_id() << "接收 handshake 响应失败\n";
+        log_with_thread_id("接收 handshake 响应失败");
         return;
     }
     if (!std::equal(info_hash.begin(), info_hash.end(), response.begin() + 28))
     {
-        std::cerr << "info_hash 不匹配\n";
+        log_with_thread_id("info_hash 不匹配");
         return;
     }
 }

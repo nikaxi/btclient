@@ -38,7 +38,7 @@ void Peer::run()
 
 bool Peer::connect()
 {
-    // 创建 socket
+    // 创建 socket mac 上 SOCK_NONBLOCK 不支持，使用 fcntl 设置非阻塞
     socket_fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
     if (socket_fd < 0)
     {
@@ -53,13 +53,19 @@ bool Peer::connect()
     addr.sin_addr.s_addr = *(uint32_t *)ip.data();
 
     // 连接到 peer
-    if (::connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+    if (::connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
     {
+        // EINPROGRESS 表示连接正在进行中，这是非阻塞模式下的正常情况
         if (errno != EINPROGRESS)
         {
             log_with_thread_id("connect socket_fd failed");
             return false;
-        } 
+        } else {
+            // 将其加入到 epoll 或 select 中，等待连接完成
+            fd_set writefds;
+            FD_ZERO(&writefds);
+            FD_SET(socket_fd, &writefds);
+        }
     }
     return true;
 }

@@ -16,7 +16,9 @@ void Client::download()
 {
     for (auto &peer : peers)
     {
-        std::thread t(&Peer::run, &peer);
+        std::thread t([this, &peer]() {
+            peer.run();
+        });
         t.detach(); // 分离线程，让它在后台运行
     }
 }
@@ -100,8 +102,7 @@ void Client::get_peers(Torrent &torrent)
             {
                 port[j] = static_cast<std::byte>(raw[i + j + 4]);
             }
-            // 传递client的引用给Peer，以便Peer可以访问Client的方法和数据
-            peers.push_back(Peer(ip, port, *this));
+            peers.push_back(Peer(ip, port, this));
         }
     }
     else

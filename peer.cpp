@@ -6,34 +6,34 @@
 void Peer::run()
 {
     if (!connect()) return;
-
-    handshake();
-    if (!recv_bitfield())
-    { 
-        log_with_thread_id("Failed to receive bitfield from peer:");
-        return;
-    }
-    if (!send_interested())
-    {
-        return;
-    }
-    auto thread_id = thread_id_str(std::this_thread::get_id());
-    auto i = client.get_task();
-    for (;;)
-    {
-        if (i == -1)
-        {
-            log_with_thread_id("[Peer] 没有更多人物，退出线程");
-            break; // 没有更多任务，退出线程
-        }
-        auto res = process_incoming_message(i);
-        if (!res)
-        {
-            client.reset_task(i); // 重置任务状态
-            LOG_INFO("[{}]Failed to process incoming message from peer:{} " , thread_id, to_string()) ;
-            break;
-        }
-    }
+    LOG_INFO("[{}] Peer {} 连接成功", thread_id_str(std::this_thread::get_id()), to_string());
+    // handshake();
+    // if (!recv_bitfield())
+    // { 
+    //     log_with_thread_id("Failed to receive bitfield from peer:");
+    //     return;
+    // }
+    // if (!send_interested())
+    // {
+    //     return;
+    // }
+    // auto thread_id = thread_id_str(std::this_thread::get_id());
+    // auto i = client.get_task();
+    // for (;;)
+    // {
+    //     if (i == -1)
+    //     {
+    //         log_with_thread_id("[Peer] 没有更多人物，退出线程");
+    //         break; // 没有更多任务，退出线程
+    //     }
+    //     auto res = process_incoming_message(i);
+    //     if (!res)
+    //     {
+    //         client.reset_task(i); // 重置任务状态
+    //         LOG_INFO("[{}]Failed to process incoming message from peer:{} " , thread_id, to_string()) ;
+    //         break;
+    //     }
+    // }
 }
 
 bool Peer::connect()
@@ -53,20 +53,30 @@ bool Peer::connect()
     addr.sin_addr.s_addr = *(uint32_t *)ip.data();
 
     // 连接到 peer
+    auto connection = client->get_connection();
     if (::connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1)
     {
         // EINPROGRESS 表示连接正在进行中，这是非阻塞模式下的正常情况
-        if (errno != EINPROGRESS)
+        if (errno != EINPROGRESS && errno != EWOULDBLOCK)
         {
             log_with_thread_id("connect socket_fd failed");
+            ::close(socket_fd);
             return false;
-        } else {
-            // 将其加入到 epoll 或 select 中，等待连接完成
-            fd_set writefds;
-            FD_ZERO(&writefds);
-            FD_SET(socket_fd, &writefds);
+        } 
+        if (!connection->add(socket_fd, EPOLLOUT | EPOLLET, this)) {
+            LOG_WARN("Failed to add socket_fd {} to epoll {} to peer {} errno {}", socket_fd, connection->get_epoll_fd(), to_string(), strerror(errno));
+            ::close(socket_fd);
+            return false;
+        }
+    } else {
+        // 连接成功，直接添加到 epoll
+        if (!connection->add(socket_fd, EPOLLIN | EPOLLET, this)) {
+            LOG_WARN("Failed to add socket_fd {} to epoll", socket_fd);
+            ::close(socket_fd);
+            return false;
         }
     }
+    LOG_INFO("[{}] Peer {} 连接成功, socket_fd: {}, epoll_fd: {}", thread_id_str(std::this_thread::get_id()), to_string(), socket_fd, connection->get_epoll_fd());
     return true;
 }
 bool Peer::read_exact(uint8_t *buffer, size_t len)
@@ -94,7 +104,7 @@ void Peer::handshake()
     std::vector<uint8_t> handshake_msg(68);
 
     handshake_msg[0] = 19;                                                     // pstrlen
-    auto info_hash = client.get_info_hash();                                   // 获取 info_hash
+    auto info_hash = client->get_info_hash();                                   // 获取 info_hash
     const std::string pstr = "BitTorrent protocol";                            // pstr
     std::copy(pstr.begin(), pstr.end(), handshake_msg.begin() + 1);            // pstr
     std::fill(handshake_msg.begin() + 20, handshake_msg.begin() + 28, 0);      // reserved
@@ -138,9 +148,9 @@ bool Peer::handle_piece_message(const std::vector<uint8_t> &payload)
 
     std::copy(payload.begin() + 8, payload.end(), piece_buffer.begin() + begin);
     // 检查是否已经接收完整个 piece，如果是，则调用 Client 的 set_piece_buffer 方法
-    if (begin + (payload.size() - 8) >= client.get_piece_len())
+    if (begin + (payload.size() - 8) >= client->get_piece_len())
     {
-        client.set_piece_buffer(index, piece_buffer);
+        client->set_piece_buffer(index, piece_buffer);
         piece_buffer.clear(); // 清空缓冲区，为下一个 piece 做准备
         // send_have(index);  // 纯下载不需要发送have 消息
         // 分片下载完成
@@ -224,7 +234,7 @@ bool Peer::recv_bitfield()
 bool Peer::process_incoming_message(int i)
 {   bool finished = false;
     auto thread_id = std::this_thread::get_id();
-    auto len = client.get_piece_len();
+    auto len = client->get_piece_len();
     // 1. 读取 4 字节的长度前缀 (大端序)
     uint8_t len_buf[4];
     if (!read_exact(len_buf, 4))
@@ -279,7 +289,7 @@ bool Peer::process_incoming_message(int i)
         finished = handle_piece_message(payload);
         // 是否已经下载完成
         if (finished) {
-            auto i = client.get_task();
+            auto i = client->get_task();
             if (i != -1)
             {
                 if ((bit_field[i / 8] & (1 << (7 - (i % 8)))) == 0)

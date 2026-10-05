@@ -25,7 +25,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <sys/epoll.h>
 #endif
+#include "peer_connection.h"
 
 const int PORT = 6882;
 
@@ -48,8 +50,17 @@ public:
         local_bit_field.resize(bitfield_size, 0);                  // 初始化为全 0，
     }
 
-    Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_) : peer_id(peer_id_), info_hash(info_hash_)
+    explicit Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_) 
+    : peer_id(peer_id_), 
+    info_hash(info_hash_),
+    connection(std::make_shared<PeerConnection>(::epoll_create1(EPOLL_CLOEXEC))) // 创建 epoll 文件描述符
     {
+        if (connection->get_epoll_fd() == -1)
+        {
+            throw std::runtime_error("Failed to create epoll file descriptor");
+        } else {
+            LOG_INFO("epoll_fd created: {}", connection->get_epoll_fd());
+        }
     }
 
     void set_piece_buffer(int index, const std::vector<std::uint8_t> &buffer)
@@ -119,6 +130,16 @@ public:
         tasks.erase(index);                    // 移除任务状态，表示该 piece 可以重新下载
     }
 
+    int get_epoll_fd() const
+    {
+        return connection->get_epoll_fd();
+    }
+
+    std::shared_ptr<PeerConnection> get_connection()
+    {
+        return connection;
+    }
+
 private:
     void set_bit_internal(int idx);
     bool is_bit_set_internal(int idx);
@@ -131,6 +152,7 @@ private:
     std::mutex mtx;                         // 用于保护 local_bit_field 和 piece_buffer 的互斥锁
     std::map<int, int> tasks;               // 用于存储每个 piece的下载状态，key 是 piece 索引，value 是下载状态（1: 下载中, 2: 已下载）
     int piece_length;                       // 每个 piece 的长度
+    std::shared_ptr<PeerConnection> connection; // 用于管理与 peer 的连接
 };
 
 #endif

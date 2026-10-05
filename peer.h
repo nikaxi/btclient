@@ -20,10 +20,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-
 #endif
 
 #include "utils.h"
+#include "log.h"
+#include <sys/epoll.h>
 
 class Client; // 前向声明
 
@@ -32,14 +33,16 @@ struct Peer
     std::array<std::byte, 4> ip;
     std::array<std::byte, 2> port;
 
-    Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_, Client& client_) : ip(ip_), port(port_), client(client_)
+    Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_, Client* client_) : ip(ip_), port(port_), client(client_)
     {
     }
+    Peer(Peer&& p) {
+        ip = p.ip;
+        port = p.port;
+        client = p.client;
+        std::cout << "[" << thread_id_str(std::this_thread::get_id()) << "][Peer] Peer moved: " << to_string() << std::endl;
+    } 
 
-    ~Peer()
-    {
-        ::close(socket_fd);
-    }
     std::string to_string() const
     {
         char buffer[64];
@@ -107,13 +110,17 @@ struct Peer
     }
 
     bool handle_piece_message(const std::vector<uint8_t> &payload);
+    void handle_events(uint32_t events) {
+        LOG_INFO("[{}] Peer {} 事件处理", thread_id_str(std::this_thread::get_id()), to_string());
+        return;
+    }
 
 
     int socket_fd;
     std::vector<std::uint8_t> bit_field;
     std::vector<std::uint8_t> peer_id;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
-    Client& client; 
+    Client* client; 
 };
 
 #endif

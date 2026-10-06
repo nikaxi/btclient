@@ -16,11 +16,15 @@ void Client::download()
 {
     for (auto &peer : peers)
     {
-        std::thread t([this, &peer]() {
-            peer.run();
-        });
-        t.detach(); // 分离线程，让它在后台运行
+        peer.connect();
     }
+    // Non-blocking event loop with timeout
+    auto start = std::chrono::steady_clock::now();
+    constexpr auto timeout = std::chrono::seconds(1);
+    while (std::chrono::steady_clock::now() - start < timeout) {
+        connection->wait_for_events();
+    }
+
 }
 
 void Client::set_bit_internal(int idx)

@@ -26,22 +26,26 @@
 #include "log.h"
 #include <sys/epoll.h>
 
-class Client; // 前向声明
-
+class Client;
 struct Peer
 {
     std::array<std::byte, 4> ip;
     std::array<std::byte, 2> port;
+    int handshake_state = 0; // 0: 未握手, 1: 握手中, 2: 已握手
+    std::vector<uint8_t> recv_buffer; // 用于存储接收到的 piece 数据
 
-    Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_, Client* client_) : ip(ip_), port(port_), client(client_)
+
+    Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_, Client *client_) : ip(ip_), port(port_), client(client_)
     {
     }
-    Peer(Peer&& p) {
-        ip = p.ip;
-        port = p.port;
+    Peer(Peer &&p)
+    {
+        ip = std::move(p.ip);
+        port = std::move(p.port);
         client = p.client;
-        std::cout << "[" << thread_id_str(std::this_thread::get_id()) << "][Peer] Peer moved: " << to_string() << std::endl;
-    } 
+        piece_buffer = std::move(p.piece_buffer);
+        socket_fd = p.socket_fd;
+    }
 
     std::string to_string() const
     {
@@ -76,18 +80,18 @@ struct Peer
     bool connect();
 
     void handshake();
-    bool recv_bitfield();
     bool send_interested();
     bool send_request(uint32_t index, uint32_t begin, uint32_t length);
-    bool process_incoming_message(int index);
+    bool process_incoming_message(const std::vector<uint8_t> &payload);
     void send_have(uint32_t index);
 
     bool read_exact(uint8_t *buffer, size_t len);
     bool send_raw(const uint8_t *data, size_t len)
     {
-        // 检查socket_fd 
-        if (!is_socket_sendable(socket_fd)) {
-            log_with_thread_id("socket_fd 不可用, 无法发送数据");
+        // 检查socket_fd
+        if (!is_socket_sendable(socket_fd))
+        {
+            LOG_WARN("[{}] Peer {} socket_fd 不可用, 无法发送数据", thread_id_str(std::this_thread::get_id()), to_string());
             return false;
         }
 
@@ -96,10 +100,14 @@ struct Peer
         {
             ssize_t res = ::send(socket_fd, data + sent, len - sent, 0);
             // 发送失败或对端断开
-            if (res <= 0) {
-                if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            if (res <= 0)
+            {
+                if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                {
                     continue; // 非阻塞模式下，继续尝试发送
-                } else {
+                }
+                else
+                {
                     log_with_thread_id("send failed or connection closed");
                     return false;
                 }
@@ -109,18 +117,39 @@ struct Peer
         return true;
     }
 
+    void read_data(int fd);
+    void close_conn(int fd);
+
     bool handle_piece_message(const std::vector<uint8_t> &payload);
-    void handle_events(uint32_t events) {
-        LOG_INFO("[{}] Peer {} 事件处理", thread_id_str(std::this_thread::get_id()), to_string());
+
+    void handle_events(int fd)
+    {
+        read_data(fd); // 读取数据
         return;
     }
-
+    bool valid_handshake(std::vector<uint8_t> &handshake)
+    {
+        if (handshake.size() != 68)
+        {
+            return false;
+        }
+        if (handshake[0] != 19)
+        {
+            return false;
+        }
+        const std::string expected_pstr = "BitTorrent protocol";
+        if (!std::equal(expected_pstr.begin(), expected_pstr.end(), handshake.begin() + 1))
+        {
+            return false;
+        }
+        return true;
+    }
 
     int socket_fd;
     std::vector<std::uint8_t> bit_field;
     std::vector<std::uint8_t> peer_id;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
-    Client* client; 
+    Client *client;
 };
 
 #endif

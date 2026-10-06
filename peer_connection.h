@@ -40,7 +40,6 @@ public:
     bool add(int fd, uint32_t events, Peer *peer)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        LOG_INFO("Adding fd {} to epoll {} with events {}", fd, epoll_fd, events);
 
         if (fd <= 0 || fd == epoll_fd)
         {
@@ -48,34 +47,15 @@ public:
             return false;
         }
 
-        // 验证 socket_fd 是否是合法的 socket
-        struct sockaddr_in addr;
-        socklen_t addr_len = sizeof(addr);
-        if (::getsockname(fd, (struct sockaddr *)&addr, &addr_len) == -1)
-        {
-            LOG_ERROR("fd is not a valid socket: {}", fd);
-            return false;
-        }
-        else
-        {
-            LOG_INFO("fd {} is a valid socket", fd);
-        }
-
-        // 验证 epoll_fd 是否是合法的 epoll
-        if (::fcntl(epoll_fd, F_GETFD) == -1)
-        {
-            LOG_ERROR("epoll_fd is invalid or closed: {}", epoll_fd);
-            return false;
-        } else {
-            LOG_INFO("epoll_fd {} is valid", epoll_fd);
-        }
+        // 已经注册
         if (fds.find(fd) != fds.end())
         {
             LOG_ERROR("fd {} already exists in epoll", fd);
             return false;
         }
+
         struct epoll_event ev{};
-        ev.events = EPOLLOUT | EPOLLET; // 边缘触发模式
+        ev.events = events; // 边缘触发模式
         ev.data.fd = fd;
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) != 0)
         {
@@ -87,6 +67,26 @@ public:
         return true;
     }
 
+    bool modify(int fd, uint32_t events)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (fds.find(fd) == fds.end())
+        {
+            LOG_ERROR("fd {} not found in epoll", fd);
+            return false;
+        }
+
+        struct epoll_event ev{};
+        ev.events = events; // 边缘触发模式
+        ev.data.fd = fd;
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) != 0)
+        {
+            LOG_ERROR("epoll_ctl modify failed: {} fd: {} epoll_fd: {}", strerror(errno), fd, epoll_fd);
+            return false;
+        }
+        return true;
+    }
+
     Peer *get_peer(int fd)
     {
         std::lock_guard<std::mutex> lock(mtx);
@@ -94,6 +94,10 @@ public:
         if (it != fds.end())
         {
             return it->second;
+        } else {
+            LOG_WARN("fd {} not found in fds", fd);
+            fds.erase(fd); // 移除不存在的 fd
+
         }
         return nullptr;
     }
@@ -103,77 +107,28 @@ public:
         return epoll_fd;
     }
 
-    // // 当有数据发送数据
-    // bool send_data(const uint8_t *data, size_t len) {
-    //     size_t total_sent = 0;
-    //     while (total_sent < len) {
-    //         ssize_t sent = ::send(sock_fd, reinterpret_cast<const char *>(data + total_sent), len - total_sent, 0);
-    //         if (sent <= 0) {
-    //             if (sent == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-    //                 continue; // 非阻塞模式下，继续尝试发送
-    //             } else {
-    //                 std::cerr << "Send failed or connection closed" << std::endl;
-    //                 return false; // 连接断开或出错
-    //             }
-    //         }
-    //         total_sent += sent;
-    //     }
-    //     return true;
-    // }
-    // // 当有数据接收数据
-    // bool recv_data(uint8_t *buffer, size_t len) {
-    //     size_t total_received = 0;
-    //     while (total_received < len) {
-    //         ssize_t received = ::recv(sock_fd, reinterpret_cast<char *>(buffer + total_received), len - total_received, 0);
-    //         if (received <= 0) {
-    //             if (received == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-    //                 continue; // 非阻塞模式下，继续尝试接收
-    //             } else {
-    //                 std::cerr << "Recv failed or connection closed" << std::endl;
-    //                 return false; // 连接断开或出错
-    //             }
-    //         }
-    //         total_received += received;
-    //     }
-    //     return true;
-    // }
+    bool del(int fd)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (fds.find(fd) == fds.end())
+        {
+            LOG_ERROR("fd {} not found in epoll", fd);
+            return false;
+        }
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr) != 0)
+        {
+            LOG_ERROR("epoll_ctl delete failed: {} fd: {} epoll_fd: {}", strerror(errno), fd, epoll_fd);
+            return false;
+        }
+        fds.erase(fd); // 从映射中移除
+        return true;
+    }
 
-    // // 检测事件 处理读写请求
-    // void handle_events(uint32_t events) {
-    //     // 从epoll中获取事件类型，进行相应的处理
-    //     if (events & EPOLLIN) {
-    //         // 处理可读事件
-    //         std::cout << "Socket is readable" << std::endl;
-    //         // 这里可以调用 recv_data 方法接收数据
-    //         if (recv_data(recv_buffer, BUFFER_SIZE)) {
-    //             // 处理接收到的数据
-    //             std::cout << "Received data: " << std::string(recv_buffer, recv_buffer + BUFFER_SIZE) << std::endl;
-    //         }
-    //     }
-
-    //     if (events & EPOLLOUT) {
-    //         // 处理可写事件
-    //         std::cout << "Socket is writable" << std::endl;
-    //         // 这里可以调用 send_data 方法发送数据
-    //         if (send_data(send_buffer, BUFFER_SIZE)) {
-    //             std::cout << "Sent data successfully" << std::endl;
-    //         }
-    //     }
-
-    //     if (events & (EPOLLERR | EPOLLHUP)) {
-    //         // 处理错误或挂起事件
-    //         std::cerr << "Socket error or hang up" << std::endl;
-    //         // 这里可以进行清理工作，例如关闭 socket
-    //         ::epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock_fd, nullptr);
-    //         ::close(sock_fd);
-    //     }
-    // }
-
-    // 等待事件触发
     void wait_for_events()
     {
-        struct epoll_event events[10];                   // 最多处理10个事件
-        int nfds = epoll_wait(epoll_fd, events, 10, -1); // 阻塞等待事件
+        struct epoll_event events[50];                   // 最多处理50个事件
+        int nfds = epoll_wait(epoll_fd, events, 50, -1); // 阻塞等待事件
+        LOG_INFO("epoll_wait returned {} events", nfds);
         if (nfds == -1)
         {
             throw std::runtime_error("epoll_wait failed");
@@ -181,10 +136,22 @@ public:
         for (int i = 0; i < nfds; ++i)
         {
             int fd = events[i].data.fd;
+            uint32_t event = events[i].events;
+            LOG_INFO("Handling event for fd: {} with events: {}", fd,  event);
             Peer *peer = get_peer(fd);
             if (peer)
             {
-                peer->handle_events(events[i].events); // 调用 Peer 的事件处理方法
+                if (event & EPOLLOUT) {
+                    peer->handshake(); // 发送握手消息
+                    modify(fd, EPOLLIN | EPOLLET); // 修改为只监听可读事件
+                } 
+                if (event & EPOLLIN) {
+                    peer->handle_events(fd); // 调用 Peer 的事件处理方法
+                }
+                if (event & (EPOLLERR | EPOLLHUP)) {
+                    LOG_WARN("EPOLLERR or EPOLLHUP for fd: {}", fd);
+                    peer->close_conn(fd); // 关闭连接
+                }
             }
             else
             {

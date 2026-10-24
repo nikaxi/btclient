@@ -33,11 +33,30 @@ class PeerConnection
 private:
     int epoll_fd;
     std::mutex mtx;                      // 用于保护 epoll_fd 的互斥锁
-    std::unordered_map<int, Peer *> fds; // 用于存储 socket_fd 与 Peer 对象的映射
+    std::vector<std::shared_ptr<Peer>> peers;              // 用于存储 Peer对象
+    std::unordered_map<int, std::shared_ptr<Peer>> fds; // 用于存储 socket_fd 与 Peer 对象的映射
 public:
     explicit PeerConnection(int epoll_fd) : epoll_fd(epoll_fd) {}
 
-    bool add(int fd, uint32_t events, Peer *peer)
+    void run() {
+        for(auto& peer : peers) {
+            peer->connect();
+        }
+        while(true){
+            wait_for_events();
+        }
+    }
+
+    void add_peers(std::vector<std::shared_ptr<Peer>> &&peers_)
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto& peer : peers_)
+        {
+            peers.push_back(std::move(peer));
+        }
+    }
+
+    bool add(int fd, uint32_t events, std::shared_ptr<Peer> peer)
     {
         std::lock_guard<std::mutex> lock(mtx);
 
@@ -62,9 +81,11 @@ public:
             LOG_ERROR("epoll_ctl failed: {} fd: {} epoll_fd: {}", strerror(errno), fd, epoll_fd);
             ::close(fd); // 关闭 socket_fd，防止资源泄漏
             return false;
+        } else {
+            LOG_INFO("epoll_ctl add success: fd: {} epoll_fd: {}", fd, epoll_fd);
+            fds[fd] = peer; // 将 socket_fd 与 Peer 对象关联
+            return true;
         }
-        fds[fd] = peer; // 将 socket_fd 与 Peer 对象关联
-        return true;
     }
 
     bool modify(int fd, uint32_t events)
@@ -87,7 +108,7 @@ public:
         return true;
     }
 
-    Peer *get_peer(int fd)
+    std::shared_ptr<Peer> get_peer(int fd)
     {
         std::lock_guard<std::mutex> lock(mtx);
         auto it = fds.find(fd);
@@ -96,8 +117,6 @@ public:
             return it->second;
         } else {
             LOG_WARN("fd {} not found in fds", fd);
-            fds.erase(fd); // 移除不存在的 fd
-
         }
         return nullptr;
     }
@@ -107,7 +126,7 @@ public:
         return epoll_fd;
     }
 
-    bool del(int fd)
+    bool del_fd(int fd)
     {
         std::lock_guard<std::mutex> lock(mtx);
         if (fds.find(fd) == fds.end())
@@ -120,9 +139,10 @@ public:
             LOG_ERROR("epoll_ctl delete failed: {} fd: {} epoll_fd: {}", strerror(errno), fd, epoll_fd);
             return false;
         }
-        fds.erase(fd); // 从映射中移除
         return true;
     }
+
+
 
     void wait_for_events()
     {
@@ -138,11 +158,14 @@ public:
             int fd = events[i].data.fd;
             uint32_t event = events[i].events;
             LOG_INFO("Handling event for fd: {} with events: {}", fd,  event);
-            Peer *peer = get_peer(fd);
+            std::shared_ptr<Peer> peer = get_peer(fd);
             if (peer)
             {
                 if (event & EPOLLOUT) {
                     peer->handshake(); // 发送握手消息
+                    if (peer->handshake_state == 0) {
+                        peer->handshake_state = 1; // 更新握手状态
+                    }
                     modify(fd, EPOLLIN | EPOLLET); // 修改为只监听可读事件
                 } 
                 if (event & EPOLLIN) {
@@ -150,7 +173,8 @@ public:
                 }
                 if (event & (EPOLLERR | EPOLLHUP)) {
                     LOG_WARN("EPOLLERR or EPOLLHUP for fd: {}", fd);
-                    peer->close_conn(fd); // 关闭连接
+                    del_fd(fd);
+                    peer->close_conn(fd);
                 }
             }
             else

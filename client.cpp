@@ -14,17 +14,7 @@ using namespace bencode;
 
 void Client::download()
 {
-    for (auto &peer : peers)
-    {
-        peer.connect();
-    }
-    // Non-blocking event loop with timeout
-    auto start = std::chrono::steady_clock::now();
-    constexpr auto timeout = std::chrono::seconds(1);
-    while (std::chrono::steady_clock::now() - start < timeout) {
-        connection->wait_for_events();
-    }
-
+    connection->run();
 }
 
 void Client::set_bit_internal(int idx)
@@ -94,6 +84,7 @@ void Client::get_peers(Torrent &torrent)
 
         const char* raw = peers_data->data();
         auto len = peers_data->size();
+        std::vector<std::shared_ptr<Peer>> peers;
         for (auto i = 0; i+6 <= len; i += 6)
         {
             std::array<std::byte, 4> ip;
@@ -106,15 +97,17 @@ void Client::get_peers(Torrent &torrent)
             {
                 port[j] = static_cast<std::byte>(raw[i + j + 4]);
             }
-            peers.push_back(Peer(ip, port, this));
+            peers.push_back(std::make_shared<Peer>(ip, port, this));
         }
+        LOG_INFO("获取到 {} 个 peers", peers.size());
+        // 将 局部的peers 添加到 PeerConnection 中，并且只能是移动的方式
+        connection->add_peers(std::move(peers)); // 将 peers 添加到 PeerConnection 中
     }
     else
     {
         std::cout << "Error: " << res.error() << std::endl;
     }
     piece_length = torrent.info.piece_length; // 设置 piece_length
-    LOG_INFO("[初始化peers数量] {}", peers.size()); 
 }
 
 

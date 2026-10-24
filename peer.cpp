@@ -3,26 +3,6 @@
 #include <thread>
 #include "client.h"
 
-void Peer::run()
-{
-    if (!connect())
-        return;
-    LOG_INFO("[{}] Peer {} 连接成功", thread_id_str(std::this_thread::get_id()), to_string());
-    auto connection = client->get_connection();
-    auto peer = connection->get_peer(socket_fd);
-
-    // 5. 等待事件发生并处理消息
-    while (true) {
-        connection->wait_for_events();
-        // 6. 处理所有事件
-        process_events();
-        // 7. 检查是否完成任务
-        if (is_task_complete()) {
-            break;
-        }
-    }
-}
-
 bool Peer::connect()
 {
     // 创建 socket mac 上 SOCK_NONBLOCK 不支持，使用 fcntl 设置非阻塞
@@ -50,7 +30,7 @@ bool Peer::connect()
             ::close(socket_fd);
             return false;
         }
-        if (!connection->add(socket_fd, EPOLLOUT | EPOLLET, this))
+        if (!connection->add(socket_fd, EPOLLOUT | EPOLLET, shared_from_this()))
         {
             ::close(socket_fd);
             return false;
@@ -59,7 +39,7 @@ bool Peer::connect()
     else
     {
         // 这里基本只能是回环连接成功的情况，直接添加到 epoll 监听
-        if (!connection->add(socket_fd, EPOLLIN | EPOLLET, this))
+        if (!connection->add(socket_fd, EPOLLIN | EPOLLET, shared_from_this()))
         {
             LOG_WARN("Failed to add socket_fd {} to epoll", socket_fd);
             ::close(socket_fd);
@@ -197,28 +177,31 @@ bool Peer::process_incoming_message(const std::vector<uint8_t> &data)
     auto thread_id = std::this_thread::get_id();
     auto len = client->get_piece_len();
 
-        // 3. 验证消息长度和结构
-        if (data.size() < 1) {
-            LOG_WARN("[{}] 收到无效消息: 数据长度不足", thread_id_str(std::this_thread::get_id()));
+    // 3. 验证消息长度和结构
+    if (data.size() < 1)
+    {
+        LOG_WARN("[{}] 收到无效消息: 数据长度不足", thread_id_str(std::this_thread::get_id()));
+        return false;
+    }
+
+    // 3. 读取 1 字节的消息 ID
+    uint8_t msg_id = data[0];
+    std::vector<uint8_t> payload = std::vector<uint8_t>(data.begin() + 1, data.end());
+
+    // 4. 验证 payload 长度 (根据消息类型)
+    switch (msg_id)
+    {
+    case 3: // Piece 消息需要至少 9 字节 (index:4, begin:4, block:1+)
+        if (payload.size() < 9)
+        {
+            LOG_WARN("[{}] 收到无效 Piece 消息: 数据不足 {} bytes", thread_id_str(std::this_thread::get_id()), 9);
             return false;
         }
-        
-        // 3. 读取 1 字节的消息 ID
-        uint8_t msg_id = data[0];
-        std::vector<uint8_t> payload = std::vector<uint8_t>(data.begin() + 1, data.end());
-        
-        // 4. 验证 payload 长度 (根据消息类型)
-        switch (msg_id) {
-            case 3: // Piece 消息需要至少 9 字节 (index:4, begin:4, block:1+)
-                if (payload.size() < 9) {
-                    LOG_WARN("[{}] 收到无效 Piece 消息: 数据不足 {} bytes", thread_id_str(std::this_thread::get_id()), 9);
-                    return false;
-                }
-                break;
-            // 可以添加其他消息类型的验证...
-        }
-        
-        switch (msg_id)
+        break;
+        // 可以添加其他消息类型的验证...
+    }
+
+    switch (msg_id)
     {
     case 0: // Choke
         std::cout << "[" << thread_id << "][Peer]" << to_string() << " 收到 Choke (被阻塞)" << std::endl;
@@ -313,71 +296,75 @@ void Peer::send_have(uint32_t index)
     }
 }
 
-  void Peer::read_data(int fd)
+void Peer::read_data(int fd)
+{
+    // 读取数据的缓冲区
+    // Non-blocking read with timeout
+    uint8_t buffer[4096];
+    ssize_t bytes_received = ::recv(fd, buffer, sizeof(buffer), 0);
+    auto pos = recv_buffer.size();
+    if (bytes_received > 0)
     {
-        // 读取数据的缓冲区
-        // Non-blocking read with timeout
-        constexpr auto timeout = std::chrono::seconds(1);
-        auto start = std::chrono::steady_clock::now();
-        while (std::chrono::steady_clock::now() - start < timeout) {
-            uint8_t buffer[4096];
-            ssize_t bytes_received = ::recv(fd, buffer, sizeof(buffer), 0);
-            if (bytes_received > 0)
+        recv_buffer.insert(recv_buffer.begin() + pos, buffer, buffer + bytes_received);
+        memset(buffer, 0, sizeof(buffer)); // 清空缓冲区
+    }
+    else if (bytes_received == 0)
+    {
+        LOG_INFO("[{}] Peer {} 对端关闭连接", thread_id_str(std::this_thread::get_id()), to_string());
+        close_conn(fd);
+        return;
+    }
+    else
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
+            return;
+        }
+        close_conn(fd);
+        return;
+    }
+
+    if (handshake_state == 1)
+    {
+        if (recv_buffer.size() >= 68)
+        {
+            std::vector<uint8_t> handshake_msg(recv_buffer.begin(), recv_buffer.begin() + 68);
+            if (valid_handshake(handshake_msg))
             {
-                recv_buffer.insert(recv_buffer.end(), buffer, buffer + bytes_received);
-                memset(buffer, 0, sizeof(buffer)); // 清空缓冲区
-            } 
-            else if (bytes_received == 0)
+                handshake_state = 2; // 握手成功
+                LOG_INFO("[{}] Peer {} 握手成功", thread_id_str(std::this_thread::get_id()), to_string());
+                recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 68);
+            }
+            else
             {
-                LOG_INFO("[{}] Peer {} 对端关闭连接", thread_id_str(std::this_thread::get_id()), to_string());
-                close_conn(fd);
-                break;
-            } 
-            else {
-                if (errno == EAGAIN || errno == EWOULDBLOCK)
-                {
-                    break;
-                }
+                LOG_WARN("[{}] Peer {} 握手失败", thread_id_str(std::this_thread::get_id()), to_string());
                 close_conn(fd);
                 return;
             }
         }
-
-        if (handshake_state == 0)
-        {
-            if (recv_buffer.size() >= 68)
-            {
-                std::vector<uint8_t> handshake_msg(recv_buffer.begin(), recv_buffer.begin() + 68);
-                if (valid_handshake(handshake_msg))
-                {
-                    handshake_state = 2; // 握手成功
-                    LOG_INFO("[{}] Peer {} 握手成功", thread_id_str(std::this_thread::get_id()), to_string());
-                    recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 68);
-                }
-                else
-                {
-                    LOG_WARN("[{}] Peer {} 握手失败", thread_id_str(std::this_thread::get_id()), to_string());
-                    close_conn(fd);
-                    return;
-                }
-            }
-        }
-        if (handshake_state == 2)
-        {
-            if (recv_buffer.size() >= 4)
-            {
-                uint32_t msg_len = (recv_buffer[0] << 24) | (recv_buffer[1] << 16) | (recv_buffer[2] << 8) | recv_buffer[3];
-                std::vector<uint8_t> msg(recv_buffer.begin() + 4, recv_buffer.begin() + 4 + msg_len);
-                process_incoming_message(msg);
-                recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 4 + msg_len);
-            }
-        }
     }
-
-    void Peer::close_conn(int fd)
+    if (handshake_state == 2 && recv_buffer.size() >= 4)
     {
-        ::close(fd);
-        LOG_INFO("[{}] Peer {} 关闭连接", thread_id_str(std::this_thread::get_id()), to_string());
-        auto conn = client->get_connection();
-        conn->del(fd);
+            uint32_t msg_len = (recv_buffer[0] << 24) | (recv_buffer[1] << 16) | (recv_buffer[2] << 8) | recv_buffer[3];
+            if (msg_len == 0 || (msg_len > 16 * 1024 * 1024)) // Keep-Alive 消息或过大的消息
+            {
+                recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 4);
+                return;
+            }
+            if (recv_buffer.size() < 4 + msg_len)
+            {
+                return; // 等待更多数据
+            }
+
+            LOG_INFO("[{}] Peer {} 收到消息长度: {} 字节 recv_buffer: {}", thread_id_str(std::this_thread::get_id()), to_string(), msg_len, recv_buffer.size());
+            std::vector<uint8_t> msg(recv_buffer.begin() + 4, recv_buffer.begin() + 4 + msg_len);
+            process_incoming_message(msg);
+            recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 4 + msg_len);
     }
+}
+
+void Peer::close_conn(int fd)
+{
+    ::close(fd);
+    LOG_INFO("[{}] Peer {} 关闭连接", thread_id_str(std::this_thread::get_id()), to_string());
+}

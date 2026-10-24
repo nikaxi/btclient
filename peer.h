@@ -27,12 +27,8 @@
 #include <sys/epoll.h>
 
 class Client;
-struct Peer
+struct Peer : public std::enable_shared_from_this<Peer>
 {
-    std::array<std::byte, 4> ip;
-    std::array<std::byte, 2> port;
-    int handshake_state = 0; // 0: 未握手, 1: 握手中, 2: 已握手
-    std::vector<uint8_t> recv_buffer; // 用于存储接收到的 piece 数据
 
 
     Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_, Client *client_) : ip(ip_), port(port_), client(client_)
@@ -45,6 +41,7 @@ struct Peer
         client = p.client;
         piece_buffer = std::move(p.piece_buffer);
         socket_fd = p.socket_fd;
+        recv_buffer = std::move(p.recv_buffer);
     }
 
     std::string to_string() const
@@ -76,9 +73,7 @@ struct Peer
         return (std::to_integer<int>(port[0]) << 8) | std::to_integer<int>(port[1]);
     }
 
-    void run();
     bool connect();
-
     void handshake();
     bool send_interested();
     bool send_request(uint32_t index, uint32_t begin, uint32_t length);
@@ -150,6 +145,10 @@ struct Peer
     std::vector<std::uint8_t> peer_id;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
     Client *client;
+    std::array<std::byte, 4> ip;
+    std::array<std::byte, 2> port;
+    int handshake_state = 0; // 0: 未握手, 1: 握手中, 2: 已握手
+    std::vector<uint8_t> recv_buffer; // 用于存储接收到的 piece 数据
 };
 
 #endif

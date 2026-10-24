@@ -38,9 +38,9 @@ public:
     void set_bit(int idx);
     bool is_bit_set(int idx);
 
-    void add_peers(std::vector<Peer> &&peers_)
+    void add_peers(std::vector<std::shared_ptr<Peer>> &&peers_)
     {
-        peers = std::move(peers_);
+        connection->add_peers(std::move(peers_));
     }
 
     void get_peers(Torrent &torrent);
@@ -146,7 +146,6 @@ private:
     bool is_bit_set_internal(int idx);
     std::vector<std::uint8_t> peer_id;
     std::vector<std::uint8_t> local_bit_field;
-    std::vector<Peer> peers;
     int progress = 0; // 下载进度，已下载的 piece 数量
     std::vector<std::uint8_t> info_hash;
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据

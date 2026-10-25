@@ -107,24 +107,19 @@ void Client::get_peers(Torrent &torrent)
     {
         std::cout << "Error: " << res.error() << std::endl;
     }
-    piece_length = torrent.info.piece_length; // 设置 piece_length
 }
 
 
 bool Client::download_finish()
 {
-    int count = 0;
-    // 检查所有 piece 是否都已下载
-    for (size_t i = 0; i < local_bit_field.size() * 8; ++i)
+    // 检查所有 piece 是否都已下载, piece 的数能模8是补0的，所以需要跟piece总数比较
+    size_t total_pieces = torrent->info.pieces.size() / 20;
+    for (size_t i = 0; i < total_pieces ; ++i)
     {
-        if (is_bit_set(i))
+        if (!is_bit_set(i))
         {
-            count++;
-        }
-    }
-    if (count < local_bit_field.size() * 8)
-    {
-        return false;
+            return false;
+        } 
     }
     std::cout << "所有 Piece 已下载完成！" << std::endl;
     return true;

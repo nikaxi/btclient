@@ -14,8 +14,8 @@
 
 struct Info {
     std::string name;
-    long piece_length;
-    long length;
+    long piece_length;  // 分片长度
+    long length;        // 总长度
     std::map<std::uint32_t, std::vector<std::uint8_t>> pieces;
 };
 

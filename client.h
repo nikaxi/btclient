@@ -47,13 +47,13 @@ public:
 
     void set_local_bit_field(const Torrent &torrent)
     {
-        auto bitfield_size = (torrent.info.pieces.size() + 7) / 8; // 计算 bitfield 的字节数
-        local_bit_field.resize(bitfield_size, 0);                  // 初始化为全 0，
+        local_bit_field.resize(torrent.info.pieces.size(), 0);                  // 初始化为全 0，
     }
 
-    explicit Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_) 
+    explicit Client(std::vector<std::uint8_t> &peer_id_, const std::vector<std::uint8_t> &info_hash_, Torrent* torrent_) 
     : peer_id(peer_id_), 
     info_hash(info_hash_),
+    torrent(torrent_),
     connection(std::make_shared<PeerConnection>(::epoll_create1(EPOLL_CLOEXEC))) // 创建 epoll 文件描述符
     {
         if (connection->get_epoll_fd() == -1)
@@ -77,7 +77,7 @@ public:
             tasks[index] = 2; // 标记该 piece 已下载
             progress++;       // 更新下载进度
 
-            int pos = index * piece_length;
+            int pos = index * torrent->info.piece_length;
             if (piece_buffer.size() < pos + buffer.size())
             {
                 piece_buffer.resize(pos + buffer.size());
@@ -120,9 +120,8 @@ public:
         return info_hash;
     }
 
-    int get_piece_len() const
-    {
-        return piece_length;
+    Torrent* get_torrent() {
+        return torrent;
     }
 
     void reset_task(int index)
@@ -151,8 +150,8 @@ private:
     std::vector<std::uint8_t> piece_buffer; // 用于存储接收到的 piece 数据
     std::mutex mtx;                         // 用于保护 local_bit_field 和 piece_buffer 的互斥锁
     std::map<int, int> tasks;               // 用于存储每个 piece的下载状态，key 是 piece 索引，value 是下载状态（1: 下载中, 2: 已下载）
-    int piece_length;                       // 每个 piece 的长度
     std::shared_ptr<PeerConnection> connection; // 用于管理与 peer 的连接
+    Torrent* torrent;
 };
 
 #endif

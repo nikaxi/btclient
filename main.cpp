@@ -33,7 +33,7 @@ int main() {
         std::vector<std::uint8_t> peer_id = generate_peer_id();
 
         std::vector<std::uint8_t> info_hash = std::vector<std::uint8_t>(torrent.info_hash.begin(), torrent.info_hash.end());
-        Client client(peer_id, info_hash);
+        Client client(peer_id, info_hash, &torrent);
 
         client.set_local_bit_field(torrent);
         client.get_peers(torrent);

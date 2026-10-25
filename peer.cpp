@@ -109,7 +109,7 @@ bool Peer::handle_piece_message(const std::vector<uint8_t> &payload)
 
     std::copy(payload.begin() + 8, payload.end(), piece_buffer.begin() + begin);
     // 检查是否已经接收完整个 piece，如果是，则调用 Client 的 set_piece_buffer 方法
-    if (begin + (payload.size() - 8) >= client->get_piece_len())
+    if (begin + (payload.size() - 8) >= client->get_torrent()->info.piece_length)
     {
         client->set_piece_buffer(index, piece_buffer);
         piece_buffer.clear(); // 清空缓冲区，为下一个 piece 做准备
@@ -175,7 +175,7 @@ bool Peer::process_incoming_message(const std::vector<uint8_t> &data)
 {
     bool finished = false;
     auto thread_id = std::this_thread::get_id();
-    auto len = client->get_piece_len();
+    auto len = client->get_torrent()->info.piece_length;
 
     // 3. 验证消息长度和结构
     if (data.size() < 1)

@@ -36,16 +36,6 @@ bool Peer::connect()
             return false;
         }
     }
-    else
-    {
-        // 这里基本只能是回环连接成功的情况，直接添加到 epoll 监听
-        if (!connection->add(socket_fd, EPOLLIN | EPOLLET, shared_from_this()))
-        {
-            LOG_WARN("Failed to add socket_fd {} to epoll", socket_fd);
-            ::close(socket_fd);
-            return false;
-        }
-    }
     return true;
 }
 bool Peer::read_exact(uint8_t *buffer, size_t len)

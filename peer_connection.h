@@ -27,30 +27,29 @@
 #include "peer.h"
 #include <fcntl.h>
 
-
 class PeerConnection
 {
 private:
     int epoll_fd;
-    std::mutex mtx;                      // 用于保护 epoll_fd 的互斥锁
-    std::vector<std::shared_ptr<Peer>> peers;              // 用于存储 Peer对象
+    std::mutex mtx;                                     // 用于保护 epoll_fd 的互斥锁
+    std::vector<std::shared_ptr<Peer>> peers;           // 用于存储 Peer对象
     std::unordered_map<int, std::shared_ptr<Peer>> fds; // 用于存储 socket_fd 与 Peer 对象的映射
 public:
     explicit PeerConnection(int epoll_fd) : epoll_fd(epoll_fd) {}
 
-    void run() {
-        for(auto& peer : peers) {
+    void run()
+    {
+        for (auto &peer : peers)
+        {
             peer->connect();
         }
-        while(true){
-            wait_for_events();
-        }
+        wait_for_events();
     }
 
     void add_peers(std::vector<std::shared_ptr<Peer>> &&peers_)
     {
         std::lock_guard<std::mutex> lock(mtx);
-        for (auto& peer : peers_)
+        for (auto &peer : peers_)
         {
             peers.push_back(std::move(peer));
         }
@@ -81,7 +80,9 @@ public:
             LOG_ERROR("epoll_ctl failed: {} fd: {} epoll_fd: {}", strerror(errno), fd, epoll_fd);
             ::close(fd); // 关闭 socket_fd，防止资源泄漏
             return false;
-        } else {
+        }
+        else
+        {
             LOG_INFO("epoll_ctl add success: fd: {} epoll_fd: {}", fd, epoll_fd);
             fds[fd] = peer; // 将 socket_fd 与 Peer 对象关联
             return true;
@@ -115,7 +116,9 @@ public:
         if (it != fds.end())
         {
             return it->second;
-        } else {
+        }
+        else
+        {
             LOG_WARN("fd {} not found in fds", fd);
         }
         return nullptr;
@@ -142,44 +145,50 @@ public:
         return true;
     }
 
-
+    void handle_peer(std::shared_ptr<Peer> peer, int event, int fd)
+    {
+        peer->handle_events(fd); // 调用 Peer 的事件处理方法
+    }
 
     void wait_for_events()
     {
-        struct epoll_event events[50];                   // 最多处理50个事件
-        int nfds = epoll_wait(epoll_fd, events, 50, -1); // 阻塞等待事件
-        LOG_INFO("epoll_wait returned {} events", nfds);
-        if (nfds == -1)
+        while (true)
         {
-            throw std::runtime_error("epoll_wait failed");
-        }
-        for (int i = 0; i < nfds; ++i)
-        {
-            int fd = events[i].data.fd;
-            uint32_t event = events[i].events;
-            LOG_INFO("Handling event for fd: {} with events: {}", fd,  event);
-            std::shared_ptr<Peer> peer = get_peer(fd);
-            if (peer)
+            struct epoll_event events[50];                   // 最多处理50个事件
+            int nfds = epoll_wait(epoll_fd, events, 50, -1); // 阻塞等待事件
+            LOG_INFO("epoll_wait returned {} events", nfds);
+            for (int i = 0; i < nfds; ++i)
             {
-                if (event & EPOLLOUT) {
-                    peer->handshake(); // 发送握手消息
-                    if (peer->handshake_state == 0) {
-                        peer->handshake_state = 1; // 更新握手状态
+                int fd = events[i].data.fd;
+                uint32_t event = events[i].events;
+                if (event & EPOLLOUT)
+                {
+                    int err = 0;
+                    socklen_t len = sizeof(err);
+                    ::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
+                    if (err == 0)
+                    {
+                        // 连接成功
+                        std::cout << "Peer 异步连接成功！" << std::endl;
+
+                        // 【关键步骤】连接成功后，必须把监听事件从 EPOLLOUT 改为 EPOLLIN
+                        epoll_event ev{};
+                        ev.events = EPOLLIN | EPOLLET; // 以后主要靠读事件收 BT 报文
+                        ev.data.fd = fd;
+                        epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
                     }
-                    modify(fd, EPOLLIN | EPOLLET); // 修改为只监听可读事件
-                } 
-                if (event & EPOLLIN) {
-                    peer->handle_events(fd); // 调用 Peer 的事件处理方法
+                    else
+                    {
+                        // 握手失败（如对方拒绝连接、超时等）
+                        std::cerr << "Peer 连接失败，关闭 fd: " << fd << std::endl;
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+                        close(fd);
+                    }
                 }
-                if (event & (EPOLLERR | EPOLLHUP)) {
-                    LOG_WARN("EPOLLERR or EPOLLHUP for fd: {}", fd);
-                    del_fd(fd);
-                    peer->close_conn(fd);
+                else if (event & EPOLLIN) {
+                    std::shared_ptr<Peer> peer = get_peer(fd);
+                    handle_peer(peer, event, fd);
                 }
-            }
-            else
-            {
-                LOG_ERROR("No associated Peer found for fd: {}", fd);
             }
         }
     }

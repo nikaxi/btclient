@@ -14,6 +14,7 @@ using namespace bencode;
 
 void Client::download()
 {
+    connection->start_worker_pool(10);
     connection->run();
 }
 

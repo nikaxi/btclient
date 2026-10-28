@@ -27,12 +27,12 @@ bool Peer::connect()
         if (errno != EINPROGRESS && errno != EWOULDBLOCK)
         {
             log_with_thread_id("connect socket_fd failed");
-            ::close(socket_fd);
+            close_socket_fd();
             return false;
         }
         if (!connection->add(socket_fd, EPOLLOUT | EPOLLET, shared_from_this()))
         {
-            ::close(socket_fd);
+            close_socket_fd();
             return false;
         }
     }
@@ -289,12 +289,12 @@ void Peer::send_have(uint32_t index)
     }
 }
 
-void Peer::read_data(int fd)
+void Peer::read_data()
 {
     // 读取数据的缓冲区
     // Non-blocking read with timeout
     uint8_t buffer[4096];
-    ssize_t bytes_received = ::recv(fd, buffer, sizeof(buffer), 0);
+    ssize_t bytes_received = ::recv(socket_fd, buffer, sizeof(buffer), 0);
     auto pos = recv_buffer.size();
     if (bytes_received > 0)
     {
@@ -304,7 +304,7 @@ void Peer::read_data(int fd)
     else if (bytes_received == 0)
     {
         LOG_INFO("[{}] Peer {} 读取{}字节数据", thread_id_str(std::this_thread::get_id()), to_string(), bytes_received);
-        close_conn(fd);
+        close_socket_fd();
         return;
     }
     else
@@ -314,7 +314,7 @@ void Peer::read_data(int fd)
             // 等待下一次读取
             return;
         }
-        close_conn(fd);
+        close_socket_fd();
         return;
     }
 
@@ -332,7 +332,7 @@ void Peer::read_data(int fd)
             else
             {
                 LOG_WARN("[{}] Peer {} 握手失败", thread_id_str(std::this_thread::get_id()), to_string());
-                close_conn(fd);
+                close_socket_fd();
                 return;
             }
         }
@@ -355,10 +355,4 @@ void Peer::read_data(int fd)
             process_incoming_message(msg);
             recv_buffer.erase(recv_buffer.begin(), recv_buffer.begin() + 4 + msg_len);
     }
-}
-
-void Peer::close_conn(int fd)
-{
-    ::close(fd);
-    LOG_INFO("[{}] Peer {} 关闭连接", thread_id_str(std::this_thread::get_id()), to_string());
 }

@@ -26,20 +26,36 @@
 #include <memory>
 #include "peer.h"
 #include <fcntl.h>
+#include "safequeue.h"
 
 class PeerConnection
 {
 private:
-    inline static int count_err = 0;
     int epoll_fd;
     std::mutex mtx;                                     // 用于保护 epoll_fd 的互斥锁
     std::vector<std::shared_ptr<Peer>> peers;           // 用于存储 Peer对象
     std::unordered_map<int, std::shared_ptr<Peer>> fds; // 用于存储 socket_fd 与 Peer 对象的映射
+    ThreadSafeQueue<std::shared_ptr<Peer>> peer_task_queue;
+
 public:
     explicit PeerConnection(int epoll_fd) : epoll_fd(epoll_fd) {}
 
     void run()
     {
+        std::thread([&]()
+                    {
+                        while (true)
+                        {
+                            int count = 0;
+                            for (auto &peer : peers)
+                            {
+                                if (peer->socket_fd == -1)
+                                    count += 1;
+                            }
+                            LOG_INFO("-1 fd nums is {}", count);
+                            sleep(10);
+                        } })
+            .detach();
         for (auto &peer : peers)
         {
             peer->connect();
@@ -79,7 +95,7 @@ public:
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) != 0)
         {
             LOG_ERROR("epoll_ctl failed: {} fd: {} epoll_fd: {}", strerror(errno), fd, epoll_fd);
-            ::close(fd); // 关闭 socket_fd，防止资源泄漏
+            peer->close_socket_fd();
             return false;
         }
         else
@@ -146,9 +162,38 @@ public:
         return true;
     }
 
-    void handle_peer(std::shared_ptr<Peer> peer, int event, int fd)
+    void handle_peer(std::shared_ptr<Peer> peer)
     {
-        peer->handle_events(fd); // 调用 Peer 的事件处理方法
+        bool expected = false;
+        if (peer->is_processing.compare_exchange_strong(expected, true))
+        {
+            peer_task_queue.push(peer);
+        }
+    }
+
+    void worker_thread_func()
+    {
+        while (true)
+        {
+            std::shared_ptr<Peer> peer;
+            if (!peer_task_queue.pop(peer))
+            {
+                std::this_thread::yield(); // 队列为空时让出 CPU 或微调休眠
+                continue;
+            }
+            peer->handle_events();
+            // 【极其重要】处理完毕后，释放忙碌标志，允许下一轮 epoll 事件再次调度它
+            peer->is_processing = false;
+        }
+    }
+
+    // 初始化时启动 N 个工作线程
+    void start_worker_pool(int thread_count)
+    {
+        for (int i = 0; i < thread_count; ++i)
+        {
+            std::thread(&PeerConnection::worker_thread_func, this).detach();
+        }
     }
 
     void wait_for_events()
@@ -160,7 +205,6 @@ public:
             if (nfds == 0)
             {
                 LOG_INFO("epoll_wait returned {} events wait some(10) seconds", nfds);
-                LOG_WARN("{} 个 fd被关闭", count_err);
                 sleep(10);
                 continue;
             }
@@ -192,19 +236,17 @@ public:
                     {
                         LOG_WARN("{} 异步连接失败！", peer->to_string());
                         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-                        count_err += 1;
-                        close(fd);
+                        peer->close_socket_fd();
                     }
                 }
                 else if (event & EPOLLIN)
                 {
-                    handle_peer(peer, event, fd);
+                    handle_peer(peer);
                 }
                 else if (event & (EPOLLERR | EPOLLHUP))
                 {
                     LOG_WARN("{} 异步事件ERROR！", peer->to_string());
-                    count_err += 1;
-                    close(fd);
+                    peer->close_socket_fd();
                 }
                 else
                 {

@@ -44,6 +44,11 @@ struct Peer : public std::enable_shared_from_this<Peer>
         recv_buffer = std::move(p.recv_buffer);
     }
 
+    void close_socket_fd() {
+        ::close(socket_fd);
+        socket_fd = -1;
+    }
+
     std::string to_string() const
     {
         char buffer[64];
@@ -112,14 +117,13 @@ struct Peer : public std::enable_shared_from_this<Peer>
         return true;
     }
 
-    void read_data(int fd);
-    void close_conn(int fd);
+    void read_data();
 
     bool handle_piece_message(const std::vector<uint8_t> &payload);
 
-    void handle_events(int fd)
+    void handle_events()
     {
-        read_data(fd); // 读取数据
+        read_data(); // 读取数据
         return;
     }
     bool valid_handshake(std::vector<uint8_t> &handshake)
@@ -149,6 +153,7 @@ struct Peer : public std::enable_shared_from_this<Peer>
     std::array<std::byte, 2> port;
     int handshake_state = 0; // 0: 未握手, 1: 握手中, 2: 已握手
     std::vector<uint8_t> recv_buffer; // 用于存储接收到的 piece 数据
+    std::atomic<bool> is_processing{false};
 };
 
 #endif

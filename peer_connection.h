@@ -30,6 +30,7 @@
 class PeerConnection
 {
 private:
+    inline static int count_err = 0;
     int epoll_fd;
     std::mutex mtx;                                     // 用于保护 epoll_fd 的互斥锁
     std::vector<std::shared_ptr<Peer>> peers;           // 用于存储 Peer对象
@@ -154,12 +155,21 @@ public:
     {
         while (true)
         {
-            struct epoll_event events[50];                   // 最多处理50个事件
-            int nfds = epoll_wait(epoll_fd, events, 50, -1); // 阻塞等待事件
+            struct epoll_event events[100];                     // 最多处理50个事件
+            int nfds = epoll_wait(epoll_fd, events, 100, 3000); // 阻塞等待事件
+            if (nfds == 0)
+            {
+                LOG_INFO("epoll_wait returned {} events wait some(10) seconds", nfds);
+                LOG_WARN("{} 个 fd被关闭", count_err);
+                sleep(10);
+                continue;
+            }
+
             LOG_INFO("epoll_wait returned {} events", nfds);
             for (int i = 0; i < nfds; ++i)
             {
                 int fd = events[i].data.fd;
+                std::shared_ptr<Peer> peer = get_peer(fd);
                 uint32_t event = events[i].events;
                 if (event & EPOLLOUT)
                 {
@@ -169,25 +179,36 @@ public:
                     if (err == 0)
                     {
                         // 连接成功
-                        std::cout << "Peer 异步连接成功！" << std::endl;
+                        peer->handshake();
 
                         // 【关键步骤】连接成功后，必须把监听事件从 EPOLLOUT 改为 EPOLLIN
                         epoll_event ev{};
                         ev.events = EPOLLIN | EPOLLET; // 以后主要靠读事件收 BT 报文
                         ev.data.fd = fd;
                         epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+                        LOG_INFO("{} 异步连接成功！", peer->to_string());
                     }
                     else
                     {
-                        // 握手失败（如对方拒绝连接、超时等）
-                        std::cerr << "Peer 连接失败，关闭 fd: " << fd << std::endl;
+                        LOG_WARN("{} 异步连接失败！", peer->to_string());
                         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
+                        count_err += 1;
                         close(fd);
                     }
                 }
-                else if (event & EPOLLIN) {
-                    std::shared_ptr<Peer> peer = get_peer(fd);
+                else if (event & EPOLLIN)
+                {
                     handle_peer(peer, event, fd);
+                }
+                else if (event & (EPOLLERR | EPOLLHUP))
+                {
+                    LOG_WARN("{} 异步事件ERROR！", peer->to_string());
+                    count_err += 1;
+                    close(fd);
+                }
+                else
+                {
+                    LOG_WARN("{} 异步未处理", peer->to_string());
                 }
             }
         }

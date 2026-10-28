@@ -52,7 +52,7 @@ bool Peer::read_exact(uint8_t *buffer, size_t len)
             }
             else
             {
-                log_with_thread_id("recv failed or connection closed");
+                LOG_ERROR("[{}]recv failed or connection closed", thread_id_str(std::this_thread::get_id()));
             }
             return false; // 连接断开或出错
         }
@@ -76,8 +76,11 @@ void Peer::handshake()
     // 发送 handshake 消息
     if (!send_raw(handshake_msg.data(), handshake_msg.size()))
     {
+        LOG_WARN("[{}] 发送handshake失败", to_string());
         return;
-    }
+    } 
+    handshake_state = 1;
+    LOG_INFO("[{}]发送handshake消息成功", to_string());
 }
 
 bool Peer::handle_piece_message(const std::vector<uint8_t> &payload)
@@ -300,7 +303,7 @@ void Peer::read_data(int fd)
     }
     else if (bytes_received == 0)
     {
-        LOG_INFO("[{}] Peer {} 对端关闭连接", thread_id_str(std::this_thread::get_id()), to_string());
+        LOG_INFO("[{}] Peer {} 读取{}字节数据", thread_id_str(std::this_thread::get_id()), to_string(), bytes_received);
         close_conn(fd);
         return;
     }
@@ -308,6 +311,7 @@ void Peer::read_data(int fd)
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
         {
+            // 等待下一次读取
             return;
         }
         close_conn(fd);

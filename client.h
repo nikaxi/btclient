@@ -27,7 +27,7 @@
 #include <unistd.h>
 #include <sys/epoll.h>
 #endif
-
+#include <queue>
 #include "peer_connection.h"
 
 const int PORT = 6882;
@@ -35,8 +35,10 @@ const int PORT = 6882;
 class Client : public std::enable_shared_from_this<Client>
 {
 public:
-    void set_bit(int idx);
-    bool is_bit_set(int idx);
+    void set_bit(size_t bit_idx);
+    bool is_bit_set(size_t bit_idx);
+    bool is_piece_complete(size_t piece_idx);
+
 
     void add_peers(std::vector<std::shared_ptr<Peer>> &&peers_)
     {
@@ -83,7 +85,7 @@ public:
                 piece_buffer.resize(pos + buffer.size());
             }
             std::memcpy(piece_buffer.data() + pos, buffer.data(), buffer.size());
-            set_bit_internal(index);
+            set_bit(index);
             LOG_INFO("[{}] task: {} 下载完成", thread_id, index);
         }
     }
@@ -141,9 +143,9 @@ public:
         return connection;
     }
 
+    void add_task(int task);
+
 private:
-    void set_bit_internal(int idx);
-    bool is_bit_set_internal(int idx);
     std::vector<std::uint8_t> peer_id;
     std::vector<std::uint8_t> local_bit_field;
     int progress = 0; // 下载进度，已下载的 piece 数量
@@ -153,6 +155,8 @@ private:
     std::map<int, int> tasks;               // 用于存储每个 piece的下载状态，key 是 piece 索引，value 是下载状态（1: 下载中, 2: 已下载）
     int piece_length;                       // 每个 piece 的长度
     std::shared_ptr<PeerConnection> connection; // 用于管理与 peer 的连接
+    std::queue<int> task_queue;
+    std::condition_variable task_cv;
 };
 
 #endif

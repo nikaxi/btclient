@@ -26,6 +26,7 @@
 #include <memory>
 #include "peer.h"
 #include <fcntl.h>
+#include <queue>
 
 
 class PeerConnection
@@ -35,17 +36,21 @@ private:
     std::mutex mtx;                      // 用于保护 epoll_fd 的互斥锁
     std::vector<std::shared_ptr<Peer>> peers;              // 用于存储 Peer对象
     std::unordered_map<int, std::shared_ptr<Peer>> fds; // 用于存储 socket_fd 与 Peer 对象的映射
+    std::queue<std::pair<int, std::shared_ptr<Peer>>> task_queue; // 用于存储 socket_fd 与 Peer 对象的映射
+    std::condition_variable task_cv;
+    std::mutex task_mutex;
+    std::vector<std::thread> worker_threads;
+    void start_thread_pool();
+    void thread_worker();
+
+    void stop_thread_pool();
+    const int num_worker_threads = 4;
+
 public:
     explicit PeerConnection(int epoll_fd) : epoll_fd(epoll_fd) {}
+    ~PeerConnection();
 
-    void run() {
-        for(auto& peer : peers) {
-            peer->connect();
-        }
-        while(true){
-            wait_for_events();
-        }
-    }
+    void run();
 
     void add_peers(std::vector<std::shared_ptr<Peer>> &&peers_)
     {
@@ -148,7 +153,7 @@ public:
     {
         struct epoll_event events[50];                   // 最多处理50个事件
         int nfds = epoll_wait(epoll_fd, events, 50, -1); // 阻塞等待事件
-        LOG_INFO("epoll_wait returned {} events", nfds);
+        LOG_INFO("[{}] epoll_wait returned {} events", thread_id_str(std::this_thread::get_id()), nfds);
         if (nfds == -1)
         {
             throw std::runtime_error("epoll_wait failed");
@@ -157,7 +162,7 @@ public:
         {
             int fd = events[i].data.fd;
             uint32_t event = events[i].events;
-            LOG_INFO("Handling event for fd: {} with events: {}", fd,  event);
+            LOG_INFO("[{}] Handling event for fd: {} with events: {}", thread_id_str(std::this_thread::get_id()), fd,  event);
             std::shared_ptr<Peer> peer = get_peer(fd);
             if (peer)
             {
@@ -169,7 +174,9 @@ public:
                     modify(fd, EPOLLIN | EPOLLET); // 修改为只监听可读事件
                 } 
                 if (event & EPOLLIN) {
-                    peer->handle_events(fd); // 调用 Peer 的事件处理方法
+                    // 这里优化成推送到任务队列就可以了
+                    task_queue.push(std::make_pair(fd, peer));
+                    task_cv.notify_one();
                 }
                 if (event & (EPOLLERR | EPOLLHUP)) {
                     LOG_WARN("EPOLLERR or EPOLLHUP for fd: {}", fd);

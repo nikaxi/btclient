@@ -24,7 +24,7 @@ include_directories(${GTEST_ROOT}/googlemock/include)
 link_directories(${GTEST_ROOT}/build/lib)
 # add_executable(message_test message.cpp message_test.cpp)
 # add_executable(utils_test utils_test.cpp)
-add_executable(main main.cpp client.cpp torrent.cpp peer.cpp)
+add_executable(main main.cpp client.cpp torrent.cpp peer.cpp peer_connection.cpp)
 # target_link_libraries(message_test gtest gtest_main gmock gmock_main)
 # target_link_libraries(utils_test gtest gtest_main gmock gmock_main ssl crypto)
 

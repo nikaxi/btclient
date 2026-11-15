@@ -9,6 +9,8 @@
 #include "utils.h"
 #include <thread>
 #include <mutex>
+#include <condition_variable>
+
 
 using namespace bencode;
 
@@ -17,7 +19,21 @@ void Client::download()
     connection->run();
 }
 
-void Client::set_bit_internal(int idx)
+bool Client::is_piece_complete(size_t piece_idx)
+{ 
+    // 起始位置
+    auto bit_idx = piece_idx * 8; 
+    for (auto i = bit_idx; i < bit_idx + 8; i++)
+    {
+        if (!is_bit_set(i))  {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+void Client::set_bit(size_t idx)
 {
     auto byte_idx = idx / 8;
     auto bit_idx = idx % 8;
@@ -29,34 +45,8 @@ void Client::set_bit_internal(int idx)
     local_bit_field[byte_idx] |= static_cast<std::uint8_t>(1 << (7 - bit_idx));
 }
 
-bool Client::is_bit_set_internal(int idx)
+bool Client::is_bit_set(size_t idx)
 {
-    auto byte_idx = idx / 8;
-    auto bit_idx = idx % 8;
-    if (byte_idx >= local_bit_field.size())
-    {
-        return false;
-    }
-    return static_cast<std::uint8_t>(local_bit_field[byte_idx] & static_cast<std::uint8_t>(1 << (7 - bit_idx))) != 0;
-}
-
-
-void Client::set_bit(int idx)
-{
-    std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
-    auto byte_idx = idx / 8;
-    auto bit_idx = idx % 8;
-    if (byte_idx >= local_bit_field.size())
-    {
-        local_bit_field.resize(byte_idx + 1, 0);
-    }
-
-    local_bit_field[byte_idx] |= static_cast<std::uint8_t>(1 << (7 - bit_idx));
-}
-
-bool Client::is_bit_set(int idx)
-{
-    std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
     auto byte_idx = idx / 8;
     auto bit_idx = idx % 8;
     if (byte_idx >= local_bit_field.size())
@@ -102,6 +92,11 @@ void Client::get_peers(Torrent &torrent)
         LOG_INFO("获取到 {} 个 peers", peers.size());
         // 将 局部的peers 添加到 PeerConnection 中，并且只能是移动的方式
         connection->add_peers(std::move(peers)); // 将 peers 添加到 PeerConnection 中
+
+        // 初始化任务队列
+        for (int i=0; i< torrent.info.pieces.size(); ++i) {
+            add_task(i);
+        }
     }
     else
     {
@@ -130,25 +125,21 @@ bool Client::download_finish()
     return true;
 }
 
-
+// 以piece下载为单位，不是piece内的16k block为单位下载
 int Client::get_task()
 {
+    std::unique_lock<std::mutex> lock(mtx); // 确保线程安全
+    task_cv.wait(lock, [this]{ return !task_queue.empty();}); 
+    if (task_queue.empty()) {
+        return -1;
+    } 
+    int task = task_queue.front();
+    task_queue.pop();
+    return task;
+}
+
+void Client::add_task(int task) {
     std::lock_guard<std::mutex> lock(mtx); // 确保线程安全
-    auto thread_id = thread_id_str(std::this_thread::get_id());
-    for (size_t i = 0; i < local_bit_field.size() * 8 ; ++i)
-    {
-        if (is_bit_set_internal(i)){
-            continue;
-        } 
-        if (tasks.find(i) != tasks.end()) {
-            if (tasks.at(i) == 1) {
-                continue;
-            }
-        } else {
-            tasks[i] = 1;
-            LOG_INFO("[{}] get task: {}", thread_id, i);
-            return i;
-        }
-    }
-    return -1;
+    task_queue.push(task);
+    task_cv.notify_one();
 }

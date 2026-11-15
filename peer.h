@@ -1,14 +1,19 @@
 #ifndef PEER_H
 #define PEER_H
 
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
+
 #include <iostream>
 #include <vector>
 #include <cstddef>
+
 #include <string>
+
 #include <cstring>
+
 #include <stdexcept>
 #include <memory>
 #ifdef _WIN32
@@ -32,6 +37,7 @@ struct Peer : public std::enable_shared_from_this<Peer>
 
 
     Peer(std::array<std::byte, 4> ip_, std::array<std::byte, 2> port_, Client *client_) : ip(ip_), port(port_), client(client_)
+
     {
     }
     Peer(Peer &&p)
@@ -149,6 +155,7 @@ struct Peer : public std::enable_shared_from_this<Peer>
     std::array<std::byte, 2> port;
     int handshake_state = 0; // 0: 未握手, 1: 握手中, 2: 已握手
     std::vector<uint8_t> recv_buffer; // 用于存储接收到的 piece 数据
+    std::mutex mutex;
 };
 
 #endif

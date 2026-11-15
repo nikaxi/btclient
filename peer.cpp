@@ -92,6 +92,7 @@ void Peer::handshake()
 
 bool Peer::handle_piece_message(const std::vector<uint8_t> &payload)
 {
+    std::lock_guard<std::mutex> lock(mutex);
     if (payload.size() < 8)
     {
         log_with_thread_id("payload 字节不足8");

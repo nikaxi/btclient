@@ -56,11 +56,13 @@ bool Client::is_bit_set(size_t idx)
     return static_cast<int>(local_bit_field[byte_idx] & static_cast<int>(1 << (7 - bit_idx))) != 0;
 }
 
-void Client::get_peers(Torrent &torrent)
+bool Client::get_peers(Torrent &torrent)
 {
     // send request to announce_url
     std::string host = parse_announce_url(torrent.announce);
     httplib::Client cli(host);
+    cli.set_connection_timeout(5); // 秒，避免 tracker 不可达时卡死
+    cli.set_read_timeout(10);
     cli.set_follow_location(true); // follow redirects 解决302问题
     std::string url = "/announce?compact=1&info_hash=" + url_encode(std::vector(torrent.info_hash.begin(), torrent.info_hash.end())) + "&peer_id=" + url_encode(std::vector(peer_id.begin(), peer_id.end())) + "&port=" + std::to_string(PORT) + "&uploaded=0&event=started&downloaded=0&left=" + std::to_string(torrent.info.length);
 
@@ -71,6 +73,11 @@ void Client::get_peers(Torrent &torrent)
         // interval 900 秒
         auto interval = std::get_if<bencode::integer>(&d["interval"]);
         auto peers_data = std::get_if<bencode::string>(&d["peers"]);
+        if (!peers_data)
+        {
+            LOG_ERROR("tracker 返回异常，没有 compact peers 数据");
+            return false;
+        }
 
         const char* raw = peers_data->data();
         auto len = peers_data->size();
@@ -90,6 +97,10 @@ void Client::get_peers(Torrent &torrent)
             peers.push_back(std::make_shared<Peer>(ip, port, this));
         }
         LOG_INFO("获取到 {} 个 peers", peers.size());
+        if (peers.empty())
+        {
+            return false;
+        }
         // 将 局部的peers 添加到 PeerConnection 中，并且只能是移动的方式
         connection->add_peers(std::move(peers)); // 将 peers 添加到 PeerConnection 中
 
@@ -100,9 +111,11 @@ void Client::get_peers(Torrent &torrent)
     }
     else
     {
-        std::cout << "Error: " << res.error() << std::endl;
+        LOG_ERROR("announce 请求失败: {}", res ? ("status=" + std::to_string(res->status)) : std::to_string(static_cast<int>(res.error())));
+        return false;
     }
     piece_length = torrent.info.piece_length; // 设置 piece_length
+    return true;
 }
 
 

@@ -36,7 +36,23 @@ int main() {
         Client client(peer_id, info_hash);
 
         client.set_local_bit_field(torrent);
-        client.get_peers(torrent);
+
+        // announce 失败时重试，避免拿不到 peers 后仍然进入下载循环
+        bool got_peers = false;
+        for (int retry = 0; retry < 3 && !got_peers; ++retry)
+        {
+            got_peers = client.get_peers(torrent);
+            if (!got_peers)
+            {
+                std::cout << "获取 peers 失败，5 秒后重试..." << std::endl;
+                sleep(5);
+            }
+        }
+        if (!got_peers)
+        {
+            std::cerr << "无法从 tracker 获取 peers，退出" << std::endl;
+            return 1;
+        }
 
         client.download();
         

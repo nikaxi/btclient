@@ -45,7 +45,7 @@ public:
         connection->add_peers(std::move(peers_));
     }
 
-    void get_peers(Torrent &torrent);
+    bool get_peers(Torrent &torrent);
 
     void set_local_bit_field(const Torrent &torrent)
     {

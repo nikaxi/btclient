@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstdint>
 #include <cstring>
+#include <cerrno>
 #include <string>
 #include <stdexcept>
 #include <sys/epoll.h>
@@ -152,12 +153,21 @@ public:
     void wait_for_events()
     {
         struct epoll_event events[50];                   // 最多处理50个事件
-        int nfds = epoll_wait(epoll_fd, events, 50, -1); // 阻塞等待事件
-        LOG_INFO("[{}] epoll_wait returned {} events", thread_id_str(std::this_thread::get_id()), nfds);
+        // 1 秒超时，避免没有事件时永久阻塞，方便后续做定期重试/状态检查
+        int nfds = epoll_wait(epoll_fd, events, 50, 1000);
         if (nfds == -1)
         {
+            if (errno == EINTR)
+            {
+                return;
+            }
             throw std::runtime_error("epoll_wait failed");
         }
+        if (nfds == 0)
+        {
+            return; // 超时，无事件
+        }
+        LOG_INFO("epoll_wait returned {} events", nfds);
         for (int i = 0; i < nfds; ++i)
         {
             int fd = events[i].data.fd;
